@@ -14,6 +14,8 @@
 		249F33ED2BA763E700061B0B /* AudiNoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249F33EC2BA763E700061B0B /* AudiNoteTests.swift */; };
 		249F33F72BA763E700061B0B /* AudiNoteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249F33F62BA763E700061B0B /* AudiNoteUITests.swift */; };
 		249F33F92BA763E700061B0B /* AudiNoteUITestsLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249F33F82BA763E700061B0B /* AudiNoteUITestsLaunchTests.swift */; };
+		249F340B2BA764FF00061B0B /* InputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249F340A2BA764FF00061B0B /* InputView.swift */; };
+		249F340D2BA7652600061B0B /* SignInView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249F340C2BA7652600061B0B /* SignInView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +46,8 @@
 		249F33F22BA763E700061B0B /* AudiNoteUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AudiNoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		249F33F62BA763E700061B0B /* AudiNoteUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudiNoteUITests.swift; sourceTree = "<group>"; };
 		249F33F82BA763E700061B0B /* AudiNoteUITestsLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudiNoteUITestsLaunchTests.swift; sourceTree = "<group>"; };
+		249F340A2BA764FF00061B0B /* InputView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InputView.swift; sourceTree = "<group>"; };
+		249F340C2BA7652600061B0B /* SignInView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignInView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -94,8 +98,10 @@
 		249F33DA2BA763E500061B0B /* AudiNote */ = {
 			isa = PBXGroup;
 			children = (
-				249F33DB2BA763E500061B0B /* AudiNoteApp.swift */,
-				249F33DD2BA763E500061B0B /* ContentView.swift */,
+				249F34082BA7647000061B0B /* App */,
+				249F34072BA7646000061B0B /* Components */,
+				249F34062BA7640D00061B0B /* Core */,
+				249F34052BA7640100061B0B /* Views */,
 				249F33DF2BA763E700061B0B /* Assets.xcassets */,
 				249F33E12BA763E700061B0B /* Preview Content */,
 			);
@@ -125,6 +131,46 @@
 				249F33F82BA763E700061B0B /* AudiNoteUITestsLaunchTests.swift */,
 			);
 			path = AudiNoteUITests;
+			sourceTree = "<group>";
+		};
+		249F34052BA7640100061B0B /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				249F340C2BA7652600061B0B /* SignInView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		249F34062BA7640D00061B0B /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				249F34092BA7648200061B0B /* Root */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		249F34072BA7646000061B0B /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				249F340A2BA764FF00061B0B /* InputView.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		249F34082BA7647000061B0B /* App */ = {
+			isa = PBXGroup;
+			children = (
+				249F33DB2BA763E500061B0B /* AudiNoteApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		249F34092BA7648200061B0B /* Root */ = {
+			isa = PBXGroup;
+			children = (
+				249F33DD2BA763E500061B0B /* ContentView.swift */,
+			);
+			path = Root;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -257,7 +303,9 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				249F340B2BA764FF00061B0B /* InputView.swift in Sources */,
 				249F33DE2BA763E500061B0B /* ContentView.swift in Sources */,
+				249F340D2BA7652600061B0B /* SignInView.swift in Sources */,
 				249F33DC2BA763E500061B0B /* AudiNoteApp.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
