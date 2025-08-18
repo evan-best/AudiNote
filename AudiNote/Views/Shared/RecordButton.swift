@@ -52,6 +52,7 @@ struct RecordButton: View {
                                 .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(Color(.systemBackground))
                                 .monospacedDigit()
+                                .frame(minWidth: 50, alignment: .leading)
                         }
                     }
                     .padding(18)

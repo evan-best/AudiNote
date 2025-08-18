@@ -37,6 +37,8 @@ struct LiveScrollWaveformView: View {
                     Text(recorder.elapsedTimeFormatted)
                         .font(.system(size: 16, weight: .medium))
                         .foregroundColor(.primary)
+                        .monospacedDigit()
+                        .frame(minWidth: 50, alignment: .leading)
                 }
             }
             .padding(.horizontal, 20)
