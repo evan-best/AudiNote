@@ -6,8 +6,15 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2438F6F92E512F1200316A2B /* DSWaveformImage in Frameworks */ = {isa = PBXBuildFile; productRef = 2438F6F82E512F1200316A2B /* DSWaveformImage */; };
+		2438F6FB2E512F1200316A2B /* DSWaveformImageViews in Frameworks */ = {isa = PBXBuildFile; productRef = 2438F6FA2E512F1200316A2B /* DSWaveformImageViews */; };
+		2476B1B02E4FF4FE00C828AF /* AudiNote Icon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 2476B1AF2E4FF4FE00C828AF /* AudiNote Icon.icon */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		2406B74D2E4A942B00E8420D /* AudiNote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AudiNote.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		2476B1AF2E4FF4FE00C828AF /* AudiNote Icon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = "AudiNote Icon.icon"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -36,6 +43,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2438F6F92E512F1200316A2B /* DSWaveformImage in Frameworks */,
+				2438F6FB2E512F1200316A2B /* DSWaveformImageViews in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -47,6 +56,7 @@
 			children = (
 				2406B74F2E4A942B00E8420D /* AudiNote */,
 				2406B74E2E4A942B00E8420D /* Products */,
+				2476B1AF2E4FF4FE00C828AF /* AudiNote Icon.icon */,
 			);
 			sourceTree = "<group>";
 		};
@@ -78,6 +88,8 @@
 			);
 			name = AudiNote;
 			packageProductDependencies = (
+				2438F6F82E512F1200316A2B /* DSWaveformImage */,
+				2438F6FA2E512F1200316A2B /* DSWaveformImageViews */,
 			);
 			productName = AudiNote;
 			productReference = 2406B74D2E4A942B00E8420D /* AudiNote.app */;
@@ -107,6 +119,9 @@
 			);
 			mainGroup = 2406B7442E4A942B00E8420D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2438F6F72E512F1200316A2B /* XCRemoteSwiftPackageReference "DSWaveformImage" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2406B74E2E4A942B00E8420D /* Products */;
 			projectDirPath = "";
@@ -122,6 +137,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2476B1B02E4FF4FE00C828AF /* AudiNote Icon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -141,7 +157,7 @@
 		2406B75C2E4A942C00E8420D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AudiNote Icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AudiNote/AudiNote.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -150,11 +166,13 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AudiNote/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AudiNote;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "AudiNote uses your microphone to capture audio from your recordings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -174,7 +192,7 @@
 		2406B75D2E4A942C00E8420D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "AudiNote Icon";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = AudiNote/AudiNote.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -183,11 +201,13 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = AudiNote/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = AudiNote;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "AudiNote uses your microphone to capture audio from your recordings.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -347,6 +367,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2438F6F72E512F1200316A2B /* XCRemoteSwiftPackageReference "DSWaveformImage" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/dmrschmidt/DSWaveformImage";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 14.2.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2438F6F82E512F1200316A2B /* DSWaveformImage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2438F6F72E512F1200316A2B /* XCRemoteSwiftPackageReference "DSWaveformImage" */;
+			productName = DSWaveformImage;
+		};
+		2438F6FA2E512F1200316A2B /* DSWaveformImageViews */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2438F6F72E512F1200316A2B /* XCRemoteSwiftPackageReference "DSWaveformImage" */;
+			productName = DSWaveformImageViews;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2406B7452E4A942B00E8420D /* Project object */;
 }
