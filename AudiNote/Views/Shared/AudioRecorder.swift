@@ -52,25 +52,19 @@ class AudioRecorder: ObservableObject {
             self.elapsed = recorder.currentTime
             recorder.updateMeters()
             let power = recorder.averagePower(forChannel: 0)
-            let normalizedPower = max(0.0, (power + 55) / 45) // Balanced normalization range
+            let normalizedPower = max(0.0, (power + 55) / 45)
             
-            // Apply balanced power curve with clamping for close speech
             let rawAmplitude = CGFloat(normalizedPower)
-            let curvedAmplitude = pow(rawAmplitude, 3.5) // Moderate curve
-            let processedAmplitude = min(1.0, curvedAmplitude) // Clamp to prevent excessive amplitude
+            let processedAmplitude = pow(rawAmplitude, 3.5)
             
-            // Simple trail prevention
+            // Apply fast decay to prevent trailing
             let finalAmplitude: CGFloat
-            if let lastAmplitude = self.amplitudes.last, self.amplitudes.count >= 2 {
-                let secondLastAmplitude = self.amplitudes[self.amplitudes.count - 2]
-                
-                // Moderate trail prevention - balanced approach
-                if processedAmplitude < lastAmplitude && lastAmplitude < secondLastAmplitude && lastAmplitude > 0.07 && processedAmplitude < 0.03 {
-                    finalAmplitude = 0.0 // Cut trailing audio with moderate threshold
-                } else if processedAmplitude < lastAmplitude * 0.6 && lastAmplitude > 0.12 && processedAmplitude < 0.04 {
-                    finalAmplitude = 0.0 // Cut significant drops to low levels
+            if let lastAmplitude = self.amplitudes.last {
+                if processedAmplitude > lastAmplitude {
+                    finalAmplitude = processedAmplitude // Allow increases
                 } else {
-                    finalAmplitude = processedAmplitude
+                    // Apply fast decay to decreases
+                    finalAmplitude = max(0.0, lastAmplitude * 0.3) // 70% decay per sample
                 }
             } else {
                 finalAmplitude = processedAmplitude
@@ -110,25 +104,19 @@ class AudioRecorder: ObservableObject {
             self.elapsed = recorder.currentTime
             recorder.updateMeters()
             let power = recorder.averagePower(forChannel: 0)
-            let normalizedPower = max(0.0, (power + 55) / 45) // Balanced normalization range
+            let normalizedPower = max(0.0, (power + 55) / 45)
             
-            // Apply balanced power curve with clamping for close speech
             let rawAmplitude = CGFloat(normalizedPower)
-            let curvedAmplitude = pow(rawAmplitude, 3.5) // Moderate curve
-            let processedAmplitude = min(1.0, curvedAmplitude) // Clamp to prevent excessive amplitude
+            let processedAmplitude = pow(rawAmplitude, 3.5)
             
-            // Simple trail prevention
+            // Apply fast decay to prevent trailing
             let finalAmplitude: CGFloat
-            if let lastAmplitude = self.amplitudes.last, self.amplitudes.count >= 2 {
-                let secondLastAmplitude = self.amplitudes[self.amplitudes.count - 2]
-                
-                // Moderate trail prevention - balanced approach
-                if processedAmplitude < lastAmplitude && lastAmplitude < secondLastAmplitude && lastAmplitude > 0.07 && processedAmplitude < 0.03 {
-                    finalAmplitude = 0.0 // Cut trailing audio with moderate threshold
-                } else if processedAmplitude < lastAmplitude * 0.6 && lastAmplitude > 0.12 && processedAmplitude < 0.04 {
-                    finalAmplitude = 0.0 // Cut significant drops to low levels
+            if let lastAmplitude = self.amplitudes.last {
+                if processedAmplitude > lastAmplitude {
+                    finalAmplitude = processedAmplitude // Allow increases
                 } else {
-                    finalAmplitude = processedAmplitude
+                    // Apply fast decay to decreases
+                    finalAmplitude = max(0.0, lastAmplitude * 0.3) // 70% decay per sample
                 }
             } else {
                 finalAmplitude = processedAmplitude
