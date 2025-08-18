@@ -15,8 +15,9 @@ enum RecordingState {
 }
 
 struct RecordingSheet: View {
+    let recorder: AudioRecorder
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var recorder = AudioRecorder()
+    @Environment(\.dismiss) private var dismiss
     @StateObject private var audioPlayer = AudioPlayer()
     @State private var state: RecordingState = .idle
     @State private var playbackReady = false
@@ -40,7 +41,7 @@ struct RecordingSheet: View {
                     LiveScrollWaveformView(
                         recorder: recorder,
                         onCancel: {
-                            reset()
+                            dismiss()
                         },
                         onDone: {
                             self.state = .finished
@@ -156,9 +157,12 @@ struct RecordingSheet: View {
             }
         }
         .onAppear {
-            guard state == .idle else { return }
-            recorder.startRecording()
-            state = .recording
+            // Set state based on recorder's current state
+            if recorder.isRecording {
+                state = .recording
+            } else if recorder.isPaused {
+                state = .paused
+            }
         }
         .onChange(of: state) { newState in
             if newState != .finished {
@@ -219,8 +223,7 @@ struct RecordingSheet: View {
         case .finished:
             HStack(spacing: 16) {
                 Button {
-                    reset()
-                    audioPlayer.stop()
+                    dismiss()
                 } label: {
                     Label("Delete", systemImage: "trash")
                         .font(.caption)
@@ -238,8 +241,7 @@ struct RecordingSheet: View {
                         audioFilePath: lastRecordingURL?.path ?? ""
                     )
                     modelContext.insert(newRecording)
-                    reset()
-                    audioPlayer.stop()
+                    dismiss()
                 } label: {
                     Label("Save", systemImage: "checkmark.circle")
                         .font(.caption)
@@ -256,8 +258,8 @@ struct RecordingSheet: View {
     // MARK: - Helpers
 
     private func reset() {
-        state = .idle
         recorder.stopRecording()
+        dismiss()
     }
 
     private func formattedTime(_ duration: TimeInterval) -> String {
@@ -323,6 +325,7 @@ struct RecordingSheet: View {
 
 struct SheetPreviewContainer: View {
     @State private var showSheet = false
+    @StateObject private var recorder = AudioRecorder()
     @Namespace private var animation
 
     var body: some View {
@@ -330,9 +333,9 @@ struct SheetPreviewContainer: View {
         RecordButton(onRecordTapped: { showSheet = true })
             .matchedTransitionSource(id: "Record", in: animation)
             .sheet(isPresented: $showSheet) {
-                    RecordingSheet()
+                    RecordingSheet(recorder: recorder)
                     .navigationTransition(.zoom(sourceID: "Record", in: animation))
-                    .presentationDetents([.fraction(0.25), .fraction(0.4)])
+                    .presentationDetents([.fraction(0.25)])
             }
     }
 }

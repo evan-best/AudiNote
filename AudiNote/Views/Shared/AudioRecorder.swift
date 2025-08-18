@@ -47,7 +47,7 @@ class AudioRecorder: ObservableObject {
         self.amplitudes = []
         self.isRecording = true
         self.isPaused = false
-        self.timer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
+        self.timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
             guard let self = self, let recorder = self.audioRecorder else { return }
             self.elapsed = recorder.currentTime
             recorder.updateMeters()
@@ -70,10 +70,15 @@ class AudioRecorder: ObservableObject {
                 finalAmplitude = processedAmplitude
             }
             
-            // Dispatch UI updates to MainActor for smooth performance
-            Task { @MainActor in
-                self.amplitudes.append(finalAmplitude)
-                if self.amplitudes.count > 200 { self.amplitudes.removeFirst() }
+            // Only add new bars every 3 frames for slower scroll
+            self.frameCounter += 1
+            if self.frameCounter >= 3 {
+                self.frameCounter = 0
+                // Dispatch UI updates to MainActor for smooth performance
+                Task { @MainActor in
+                    self.amplitudes.append(finalAmplitude)
+                    if self.amplitudes.count > 200 { self.amplitudes.removeFirst() }
+                }
             }
         }
     }
@@ -99,7 +104,7 @@ class AudioRecorder: ObservableObject {
     func resumeRecording() {
         audioRecorder?.record()
         isPaused = false
-        timer = Timer.scheduledTimer(withTimeInterval: 0.033, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { [weak self] _ in
             guard let self = self, let recorder = self.audioRecorder else { return }
             self.elapsed = recorder.currentTime
             recorder.updateMeters()
@@ -122,10 +127,15 @@ class AudioRecorder: ObservableObject {
                 finalAmplitude = processedAmplitude
             }
             
-            // Dispatch UI updates to MainActor for smooth performance
-            Task { @MainActor in
-                self.amplitudes.append(finalAmplitude)
-                if self.amplitudes.count > 200 { self.amplitudes.removeFirst() }
+            // Only add new bars every 3 frames for slower scroll
+            self.frameCounter += 1
+            if self.frameCounter >= 3 {
+                self.frameCounter = 0
+                // Dispatch UI updates to MainActor for smooth performance
+                Task { @MainActor in
+                    self.amplitudes.append(finalAmplitude)
+                    if self.amplitudes.count > 200 { self.amplitudes.removeFirst() }
+                }
             }
         }
     }

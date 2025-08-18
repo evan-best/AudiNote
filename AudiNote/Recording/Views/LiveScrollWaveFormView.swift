@@ -79,7 +79,7 @@ struct LiveScrollWaveformView: View {
                             .font(.system(size: 16, weight: .semibold))
                     }
                 }
-                .buttonStyle(ProminentTranslucentButtonStyle(foreground: .white, background: .gray, backgroundOpacity: 0.2))
+                .buttonStyle(ProminentTranslucentButtonStyle(foreground: .gray, background: .gray, backgroundOpacity: 0.2))
                 
                 // Done button
                 Button(action: {
@@ -111,22 +111,44 @@ struct ProminentTranslucentButtonStyle: ButtonStyle {
     var foreground: Color
     var background: Color
     var backgroundOpacity: Double = 0.22
+    @Environment(\.colorScheme) private var colorScheme
     
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let resolvedBackground: Color = resolvedBackgroundColor()
+        let resolvedOpacity: Double = colorScheme == .light ? 1 : backgroundOpacity
+        return configuration.label
             .foregroundColor(foreground)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 15)
             .background(
                 RoundedRectangle(cornerRadius: 18)
-                    .fill(background.opacity(backgroundOpacity))
+                    .fill(resolvedBackground.opacity(resolvedOpacity))
             )
             .opacity(configuration.isPressed ? 0.88 : 1)
+    }
+    
+    private func resolvedBackgroundColor() -> Color {
+        if colorScheme == .light {
+            if background == .green {
+                return Color(red: 0.82, green: 1.0, blue: 0.85) // pastel green
+            } else if background == .red {
+                return Color(red: 1.0, green: 0.89, blue: 0.89) // pastel red
+            } else if background == .gray {
+                return Color(red: 0.95, green: 0.95, blue: 0.97) // pale gray
+            }
+        }
+        return background
     }
 }
 
 struct WaveformView: View {
     let amplitudes: [CGFloat]
+    let color: Color
+    
+    init(amplitudes: [CGFloat], color: Color = .primary) {
+        self.amplitudes = amplitudes
+        self.color = color
+    }
     
     var body: some View {
         Canvas { ctx, size in
@@ -136,8 +158,8 @@ struct WaveformView: View {
             let barCount = max(1, Int((availableWidth + barSpacing) / (barWidth + barSpacing)))
             let totalBarWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
             let startX = (size.width - totalBarWidth) / 2
-            let midY = size.height / 5
-            let maxBarHeight = size.height / 3.5
+            let midY = size.height / 2
+            let maxBarHeight = size.height / 2.5
             let minBarHeight: CGFloat = 2
 
             for i in 0..<barCount {
@@ -162,10 +184,10 @@ struct WaveformView: View {
                     height: barHeight * 2
                 )
                 let path = Path(roundedRect: rect, cornerRadius: barWidth / 2)
-                ctx.fill(path, with: .color(.primary))
+                ctx.fill(path, with: .color(color))
             }
         }
-        .animation(.easeOut(duration: 0.033), value: amplitudes.count)
+        .animation(.linear(duration: 0.15), value: amplitudes.count)
         .mask(
             LinearGradient(
                 gradient: Gradient(stops: [

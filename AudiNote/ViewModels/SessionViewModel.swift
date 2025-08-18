@@ -12,6 +12,29 @@ import AuthenticationServices
 final class SessionViewModel: NSObject, ObservableObject {
     @Published var isAuthenticated: Bool = false
     @Published var appleUserID: String? = nil
+    
+    private let userDefaults = UserDefaults.standard
+    private let appleUserIDKey = "AppleUserID"
+    
+    override init() {
+        super.init()
+        loadPersistedSession()
+    }
+    
+    private func loadPersistedSession() {
+        if let savedUserID = userDefaults.string(forKey: appleUserIDKey) {
+            appleUserID = savedUserID
+            checkCredentialState(userID: savedUserID)
+        }
+    }
+    
+    private func saveSession() {
+        if let userID = appleUserID {
+            userDefaults.set(userID, forKey: appleUserIDKey)
+        } else {
+            userDefaults.removeObject(forKey: appleUserIDKey)
+        }
+    }
 
     func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
         switch result {
@@ -19,6 +42,7 @@ final class SessionViewModel: NSObject, ObservableObject {
             if let credential = auth.credential as? ASAuthorizationAppleIDCredential {
                 appleUserID = credential.user
                 isAuthenticated = true
+                saveSession()
             }
         case .failure:
             isAuthenticated = false
@@ -28,7 +52,17 @@ final class SessionViewModel: NSObject, ObservableObject {
     func checkCredentialState(userID: String) {
         ASAuthorizationAppleIDProvider().getCredentialState(forUserID: userID) { [weak self] state, _ in
             DispatchQueue.main.async {
-                self?.isAuthenticated = (state == .authorized)
+                switch state {
+                case .authorized:
+                    self?.isAuthenticated = true
+                case .revoked, .notFound:
+                    self?.signOut()
+                case .transferred:
+                    // Handle transferred state if needed
+                    self?.isAuthenticated = false
+                @unknown default:
+                    self?.isAuthenticated = false
+                }
             }
         }
     }
@@ -36,5 +70,6 @@ final class SessionViewModel: NSObject, ObservableObject {
     func signOut() {
         appleUserID = nil
         isAuthenticated = false
+        saveSession()
     }
 }

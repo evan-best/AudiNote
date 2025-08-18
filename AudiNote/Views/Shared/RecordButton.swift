@@ -8,9 +8,9 @@
 import SwiftUI
 
 struct RecordButton: View {
-    @State private var isRecording = false
-    @State private var recordingTime: TimeInterval = 0
-    @State private var timer: Timer?
+    @StateObject private var recorder = AudioRecorder()
+    @State private var showSheet = false
+    @Namespace private var animation
     
     var onRecordTapped: (() -> Void)? = nil
     
@@ -23,91 +23,87 @@ struct RecordButton: View {
     }()
     
     var body: some View {
-        Button(action: toggleRecording) {
-            HStack(spacing: 4) {
-                Spacer()
-                Image(systemName:"record.circle.fill")
-                    .foregroundStyle(.red)
-                Text("Record")
-                    .foregroundStyle(.background)
-                Spacer()
+        Group {
+            if recorder.isRecording || recorder.isPaused {
+                // Show waveform in same button style
+                Button(action: {
+                    showSheet = true
+                }) {
+                    HStack(spacing: 12) {
+                        // Waveform takes up most space
+                        WaveformView(amplitudes: recorder.amplitudes, color: Color(.systemBackground))
+                            .frame(height: 20)
+                        
+                        Spacer()
+                        
+                        // Timer and indicators on the right
+                        HStack(spacing: 6) {
+                            if recorder.isPaused {
+                                Image(systemName: "pause.fill")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(Color(.systemBackground))
+                            } else {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 8, height: 8)
+                            }
+                            
+                            Text(recorder.elapsedTimeFormatted)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(Color(.systemBackground))
+                                .monospacedDigit()
+                        }
+                    }
+                    .padding(18)
+                    .background(Color.primary)
+                    .clipShape(Capsule())
+                    .padding(.horizontal, 28)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .matchedTransitionSource(id: "Record", in: animation)
+            } else {
+                // Show record button when not recording
+                Button(action: startRecording) {
+                    HStack(spacing: 4) {
+                        Spacer()
+                        Image(systemName:"record.circle.fill")
+                            .foregroundStyle(.red)
+                        Text("Record")
+                            .foregroundStyle(.background)
+                        Spacer()
+                    }
+                    .font(.system(size: 18, weight: .semibold))
+                    .padding(18)
+                    .background(Color.primary)
+                    .clipShape(Capsule())
+                    .padding(.horizontal, 28)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .matchedTransitionSource(id: "Record", in: animation)
             }
-            .font(.system(size: 18, weight: .semibold))
-            .padding(18)
-            .background(Color.primary)
-            .clipShape(Capsule())
-            .padding(.horizontal, 28)
         }
-        .buttonStyle(PlainButtonStyle())
         .frame(maxWidth: .infinity)
-        .onAppear {
-            startTimer()
-        }
-        .onDisappear {
-            stopTimer()
+        .sheet(isPresented: $showSheet) {
+            RecordingSheet(recorder: recorder)
+                .navigationTransition(.zoom(sourceID: "Record", in: animation))
+                .presentationDetents([.fraction(0.25)])
         }
     }
     
     // MARK: - Actions
-    private func toggleRecording() {
-        if isRecording {
-            stopRecording()
-        } else {
-            startRecording()
-        }
-    }
-    
     private func startRecording() {
-        isRecording = true
-        recordingTime = 0
+        recorder.startRecording()
+        showSheet = true
         onRecordTapped?()
-    }
-    
-    private func stopRecording() {
-        isRecording = false
-    }
-    
-    // MARK: - Timer
-    private func startTimer() {
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
-            recordingTime += 1
-        }
-    }
-    
-    private func stopTimer() {
-        timer?.invalidate()
-        timer = nil
-    }
-    
-    private func formatTime(_ time: TimeInterval) -> String {
-        let totalSeconds = Int(time)
-        let hours = totalSeconds / 3600
-        let minutes = (totalSeconds % 3600) / 60
-        let seconds = totalSeconds % 60
-        
-        if hours > 0 {
-            return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-        } else {
-            return String(format: "%02d:%02d", minutes, seconds)
-        }
     }
 }
 
 struct PreviewContainer: View {
-    @State private var showSheet = false
-    private let sampleAmplitudes: [CGFloat] = (0..<50).map { i in
-        let value = CGFloat(abs(sin(Double(i) * 0.3))) * 0.9 + 0.1
-        return value
-    }
     var body: some View {
         Spacer()
-        RecordButton(onRecordTapped: { showSheet = true })
-            .sheet(isPresented: $showSheet) {
-                RecordingSheet()
-                .frame(height: 80)
-                .presentationDetents([])
-            }
+        RecordButton()
     }
 }
 
 #Preview { PreviewContainer() }
+

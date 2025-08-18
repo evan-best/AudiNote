@@ -35,12 +35,7 @@ struct MainTabView: View {
     var body: some View {
         ZStack(alignment: .bottom){
             RecordingsView()
-            RecordButton(onRecordTapped: { showSheet = true })
-                .sheet(isPresented: $showSheet) {
-                    RecordingSheet()
-                        .presentationDetents([.medium])
-                }
-                
+            RecordButton()
         }
     }
 }
