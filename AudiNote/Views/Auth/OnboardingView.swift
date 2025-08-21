@@ -198,7 +198,7 @@ private struct OrbitScene: View {
                 
                 // Start rotation after expansion completes
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                    withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
+                    withAnimation(.linear(duration: 80).repeatForever(autoreverses: false)) {
                         rotationAngle = 360
                     }
                 }
