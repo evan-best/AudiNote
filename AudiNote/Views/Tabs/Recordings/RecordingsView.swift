@@ -8,6 +8,7 @@ struct RecordingsView: View {
     
     @Query(sort: \Recording.timestamp, order: .reverse) private var recordings: [Recording]
     @State private var selected: Recording?
+    @State private var showSettings = false
 
     var body: some View {
         Group {
@@ -15,15 +16,21 @@ struct RecordingsView: View {
                 NavigationSplitView {
                     recordingsList
                         .navigationTitle("Recordings")
-                        .navigationSubtitle("Record, transcribe, and share.")
+                        .navigationSubtitle("Record, transcribe, share.")
                 } detail: {
                     detailView
+                }
+                .sheet(isPresented: $showSettings) {
+                    SettingsView()
                 }
             } else {
                 NavigationStack {
                     recordingsList
                         .navigationTitle("Recordings")
-                        .navigationSubtitle("Record, transcribe, and share.")
+                        .navigationSubtitle("Record, transcribe, share.")
+                }
+                .sheet(isPresented: $showSettings) {
+                    SettingsView()
                 }
             }
         }
@@ -48,12 +55,14 @@ struct RecordingsView: View {
                 EditButton()
             }
             ToolbarItemGroup (placement: .topBarTrailing){
-                Button(action: addItem) {
+                Button {
+                    showSettings = true
+                } label: {
                     Label("Settings", systemImage: "gearshape")
                         .foregroundColor(colorScheme == .dark ? .white : .black)
                 }
                 Button(action: addItem) {
-                    Label("Notifications", systemImage: "bell")
+                    Label("Add Recording", systemImage: "plus")
                         .foregroundColor(colorScheme == .dark ? .white : .black)
                 }
             }

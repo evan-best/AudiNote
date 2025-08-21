@@ -10,6 +10,7 @@ import AuthenticationServices
 
 struct OnboardingView: View {
     @EnvironmentObject var session: SessionViewModel
+    @Environment(\.colorScheme) var colorScheme
     
     var body: some View {
         ZStack {
@@ -24,18 +25,17 @@ struct OnboardingView: View {
                     .padding(.top, 8)
 
                 // Title + Subtitle (below the orbit like the reference)
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Welcome to")
-                        .font(.system(size: 26, weight: .semibold))
+                        .font(.system(size: 22, weight: .medium))
                         .foregroundStyle(.secondary)
 
                     Text("AudiNote")
-                        .font(.system(size: 52, weight: .black))
+                        .font(.system(size: 48, weight: .semibold))
                         .foregroundStyle(.primary)
-                        .tracking(-0.5)
 
-                    Text("Record, transcribe, and share your moments.")
-                        .font(.title3.weight(.semibold))
+                    Text("Record transcribe and share your moments, meetings and more.")
+                        .font(.callout.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
@@ -45,7 +45,7 @@ struct OnboardingView: View {
                 Spacer()
 
                 // Sign in with Apple
-                VStack(spacing: 12) {
+                VStack(spacing: 14) {
                     SignInWithAppleButton(
                         onRequest: { request in
                             request.requestedScopes = [.fullName, .email]
@@ -54,7 +54,8 @@ struct OnboardingView: View {
                             session.handleAppleSignIn(result: result)
                         }
                     )
-                    .signInWithAppleButtonStyle(.black)
+                    .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
+                    .id(colorScheme)
                     .frame(height: 56)
                     .clipShape(Capsule())
                     .shadow(radius: 10, y: 6)
@@ -64,7 +65,9 @@ struct OnboardingView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
-                        .padding(.horizontal, 8)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 16)
                 }
             }
             .padding(.horizontal, 28)
@@ -109,7 +112,7 @@ private struct BackgroundWash: View {
                     Color.cyan.opacity(0.10),
                     Color.clear
                 ],
-                center: .center,
+                center: UnitPoint(x: 0.5, y: 0.3),
                 startRadius: 50,
                 endRadius: 600
             )
@@ -132,61 +135,74 @@ private struct BackgroundWash: View {
 // MARK: - Orbit Scene (rings + rotating badge layers + center icon)
 private struct OrbitScene: View {
     private let inner: [OrbitItem] = [
-        .init(symbol: "waveform", tint: .red),
-        .init(symbol: "text.bubble.fill", tint: .indigo),
-        .init(symbol: "bookmark.fill", tint: .teal),
-        .init(symbol: "square.and.arrow.up.fill", tint: .orange)
-    ]
-
-    private let mid: [OrbitItem] = [
-        .init(symbol: "calendar", tint: .purple),
-        .init(symbol: "mappin.and.ellipse", tint: .pink),
-        .init(symbol: "note.text", tint: .blue),
-        .init(symbol: "sparkles", tint: .mint)
+        .init(symbol: "mic.fill", tint: .red),
+        .init(symbol: "waveform", tint: .blue),
+        .init(symbol: "doc.text.fill", tint: .pink),
+        .init(symbol: "square.and.arrow.up.fill", tint: .accentColor),
+        .init(symbol: "folder.fill", tint: .purple),
     ]
 
     private let outer: [OrbitItem] = [
-        .init(symbol: "person.2.fill", tint: .green),
-        .init(symbol: "globe.americas.fill", tint: .cyan),
-        .init(symbol: "ticket.fill", tint: .orange),
-        .init(symbol: "party.popper.fill", tint: .pink)
+        .init(symbol: "headphones", tint: .cyan),
+        .init(symbol: "star.fill", tint: .yellow),
+        .init(symbol: "quote.bubble.fill", tint: .indigo),
+        .init(symbol: "textformat", tint: .mint),
+        .init(symbol: "clock.fill", tint: .gray),
+        .init(symbol: "magnifyingglass", tint: .teal),
+        .init(symbol: "cloud.fill", tint: .blue),
+        .init(symbol: "bell.fill", tint: .yellow),
+        .init(symbol: "record.circle.fill", tint: .red),
+        .init(symbol: "chart.bar.fill", tint: .green)
     ]
 
-    @State private var rotateOuter = false
-    @State private var rotateMid = false
-    @State private var rotateInner = false
+    @State private var hasExpanded = false
+    @State private var rotationAngle: Double = 0
+    @State private var showIcons = false
 
     var body: some View {
         ZStack {
-            // Faint concentric rings
-            OrbitRings()
+            // INNER ring (behind app icon)
+            OrbitLayer(
+                radius: hasExpanded ? 90 : 0,
+                items: inner,
+                showIcons: showIcons,
+                rotationAngle: rotationAngle,
+                iconSize: 30
+            )
+            .rotationEffect(.degrees(rotationAngle))
 
-            // Center app icon (slightly smaller)
+            // OUTER ring (behind app icon)
+            OrbitLayer(
+                radius: hasExpanded ? 140 : 0,
+                items: outer,
+                showIcons: showIcons,
+                rotationAngle: -rotationAngle * 0.7,
+                iconSize: 24
+            )
+            .rotationEffect(.degrees(-rotationAngle * 0.7))
+            
+            // Center app icon (on top)
             Image("AudiNoteIcon")
                 .resizable()
                 .scaledToFit()
-                .frame(width: 84, height: 84)
+                .frame(width: 90, height: 90)
                 .shadow(color: .black.opacity(0.15), radius: 12, y: 6)
-
-            // OUTER ring (slow, clockwise)
-            OrbitLayer(radius: 190, items: outer) // was 150
-                .rotationEffect(.degrees(rotateOuter ? 360 : 0))
-                .animation(.linear(duration: 48).repeatForever(autoreverses: false), value: rotateOuter)
-
-            // MIDDLE ring (medium, counter-clockwise)
-            OrbitLayer(radius: 150, items: mid) // was 110
-                .rotationEffect(.degrees(rotateMid ? -360 : 0))
-                .animation(.linear(duration: 36).repeatForever(autoreverses: false), value: rotateMid)
-
-            // INNER ring (faster, clockwise)
-            OrbitLayer(radius: 95, items: inner) // was 70
-                .rotationEffect(.degrees(rotateInner ? 360 : 0))
-                .animation(.linear(duration: 24).repeatForever(autoreverses: false), value: rotateInner)
         }
         .onAppear {
-            rotateOuter = true
-            rotateMid = true
-            rotateInner = true
+            // Start expansion after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                withAnimation(.spring(response: 1.0, dampingFraction: 0.8)) {
+                    hasExpanded = true
+                    showIcons = true
+                }
+                
+                // Start rotation after expansion completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) {
+                        rotationAngle = 360
+                    }
+                }
+            }
         }
     }
 }
@@ -206,26 +222,17 @@ private struct OrbitRings: View {
     }
 }
 
-// MARK: - Circular badge view (smaller badges)
+// MARK: - Circular badge view (no background)
 private struct CircleBadge: View {
     let symbol: String
     let tint: Color
+    let size: CGFloat
 
     var body: some View {
-        ZStack {
-            Circle()
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    Circle().stroke(.white.opacity(0.7), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.12), radius: 12, y: 6)
-
-            Image(systemName: symbol)
-                .font(.system(size: 20, weight: .semibold)) // was 22
-                .symbolRenderingMode(.palette)
-                .foregroundStyle(tint, tint.opacity(0.35))
-        }
-        .frame(width: 46, height: 46) // was 52
+        Image(systemName: symbol)
+            .font(.system(size: size, weight: .medium))
+            .foregroundColor(tint)
+            .frame(width: size * 1.3, height: size * 1.3)
     }
 }
 
@@ -240,6 +247,9 @@ private struct OrbitItem: Identifiable {
 private struct OrbitLayer: View {
     let radius: CGFloat
     let items: [OrbitItem]
+    let showIcons: Bool
+    let rotationAngle: Double
+    let iconSize: CGFloat
 
     var body: some View {
         GeometryReader { proxy in
@@ -249,8 +259,9 @@ private struct OrbitLayer: View {
                 ForEach(items.indices, id: \.self) { i in
                     let angle = Angle.degrees(Double(i) / Double(items.count) * 360)
                     
-                    CircleBadge(symbol: items[i].symbol, tint: items[i].tint)
-                        .rotationEffect(-angle) // counter-rotate so icon stays upright
+                    CircleBadge(symbol: items[i].symbol, tint: items[i].tint, size: iconSize)
+                        .rotationEffect(.degrees(-rotationAngle)) // Counter-rotate to keep icons upright
+                        .opacity(showIcons ? 1 : 0)
                         .position(point(on: center, radius: radius, angle: angle))
                 }
             }
@@ -271,3 +282,4 @@ private struct OrbitLayer: View {
     OnboardingView()
         .environmentObject(SessionViewModel())
 }
+
