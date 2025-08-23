@@ -9,6 +9,8 @@ struct RecordingsView: View {
     @Query(sort: \Recording.timestamp, order: .reverse) private var recordings: [Recording]
     @State private var selected: Recording?
     @State private var showSettings = false
+    @State private var showDetailSheet = false
+    @State private var selectedRecording: Recording?
 
     var body: some View {
         Group {
@@ -16,7 +18,6 @@ struct RecordingsView: View {
                 NavigationSplitView {
                     recordingsList
                         .navigationTitle("Recordings")
-                        .navigationSubtitle("Record, transcribe, share.")
                 } detail: {
                     detailView
                 }
@@ -24,14 +25,21 @@ struct RecordingsView: View {
                     SettingsView()
                 }
             } else {
-                NavigationStack {
-                    recordingsList
-                        .navigationTitle("Recordings")
-                        .navigationSubtitle("Record, transcribe, share.")
-                }
-                .sheet(isPresented: $showSettings) {
-                    SettingsView()
-                }
+                recordingsList
+                    .navigationTitle("Recordings")
+                    .sheet(isPresented: $showSettings) {
+                        SettingsView()
+                    }
+                    .fullScreenCover(isPresented: $showDetailSheet) {
+                        if let recording = selectedRecording {
+                            RecordingDetailView(recording: recording)
+                        }
+                    }
+            }
+        }
+        .fullScreenCover(isPresented: $showDetailSheet) {
+            if let recording = selectedRecording {
+                RecordingDetailView(recording: recording)
             }
         }
     }
@@ -39,14 +47,19 @@ struct RecordingsView: View {
     private var recordingsList: some View {
         List {
             ForEach(recordings, id: \.id) { recording in
-                NavigationLink(destination: RecordingDetailView(recording: recording)) {
+                Button {
+                    selectedRecording = recording
+                    showDetailSheet = true
+                } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(recording.title.isEmpty ? "Untitled" : recording.title)
                             .font(.headline)
                         Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
                             .foregroundStyle(.secondary)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .buttonStyle(PlainButtonStyle())
             }
             .onDelete(perform: deleteItems)
         }

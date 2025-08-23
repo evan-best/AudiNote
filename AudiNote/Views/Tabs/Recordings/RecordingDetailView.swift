@@ -11,51 +11,62 @@ import AVFoundation
 struct RecordingDetailView: View {
     let recording: Recording
     @StateObject private var audioPlayer = AudioPlayer()
-
+    @Environment(\.dismiss) private var dismiss
+    
     var body: some View {
-        VStack(spacing: 12) {
-            Text(recording.title.isEmpty ? "Untitled" : recording.title)
-                .font(.title2).bold()
-            Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
-                .foregroundStyle(.secondary)
-            Text("Duration: \(Int(recording.duration))s")
-                .foregroundStyle(.secondary)
-
-            VStack(spacing: 8) {
-                HStack(spacing: 16) {
-                    Button(action: {
-                        if audioPlayer.isPlaying {
-                            audioPlayer.pause()
-                        } else {
-                            if audioPlayer.duration == 0 {
-                                audioPlayer.load(url: URL(fileURLWithPath: recording.audioFilePath))
+        NavigationStack {
+            VStack(spacing: 12) {
+                Text(recording.title.isEmpty ? "Untitled" : recording.title)
+                    .font(.title2).bold()
+                Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
+                    .foregroundStyle(.secondary)
+                Text("Duration: \(Int(recording.duration))s")
+                    .foregroundStyle(.secondary)
+                
+                VStack(spacing: 8) {
+                    HStack(spacing: 16) {
+                        Button(action: {
+                            if audioPlayer.isPlaying {
+                                audioPlayer.pause()
+                            } else {
+                                if audioPlayer.duration == 0 {
+                                    audioPlayer.load(url: URL(fileURLWithPath: recording.audioFilePath))
+                                }
+                                audioPlayer.play()
                             }
-                            audioPlayer.play()
+                        }) {
+                            Image(systemName: audioPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                .font(.system(size: 36))
                         }
-                    }) {
-                        Image(systemName: audioPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 36))
+                        Text("\(formatTime(audioPlayer.currentTime)) / \(formatTime(audioPlayer.duration))")
+                            .font(.footnote)
+                            .foregroundColor(.secondary)
                     }
-                    Text("\(formatTime(audioPlayer.currentTime)) / \(formatTime(audioPlayer.duration))")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
+                    Slider(value: $audioPlayer.currentTime, in: 0...audioPlayer.duration, onEditingChanged: { editing in
+                        if !editing {
+                            audioPlayer.seek(to: audioPlayer.currentTime)
+                        }
+                    })
+                    .disabled(audioPlayer.duration == 0)
                 }
-                Slider(value: $audioPlayer.currentTime, in: 0...audioPlayer.duration, onEditingChanged: { editing in
-                    if !editing {
-                        audioPlayer.seek(to: audioPlayer.currentTime)
-                    }
-                })
-                .disabled(audioPlayer.duration == 0)
+                .padding(.vertical, 6)
+                
+                Spacer()
             }
-            .padding(.vertical, 6)
-
-            Spacer()
+            .padding()
+            .frame(maxWidth: 600)
+            .navigationTitle("Recording")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
         }
-        .padding()
-        .frame(maxWidth: 600)
-        .navigationBarTitleDisplayMode(.inline)
     }
-
+    
     private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
@@ -74,3 +85,4 @@ struct RecordingDetailView: View {
         )
     )
 }
+

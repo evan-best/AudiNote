@@ -26,6 +26,8 @@ enum Tabs {
 struct MainTabView: View {
     @State private var selection: Tabs = .recordings
     @State private var showSheet: Bool = false
+    @State private var showRecordingDetail = false
+    @State private var selectedRecording: Recording? = nil
     
     private let sampleAmplitudes: [CGFloat] = (0..<50).map { i in
         let value = CGFloat(abs(sin(Double(i) * 0.3))) * 0.9 + 0.1
@@ -33,9 +35,19 @@ struct MainTabView: View {
     }
     
     var body: some View {
-        ZStack(alignment: .bottom){
-            RecordingsView()
-            RecordButton()
+        NavigationStack {
+            ZStack(alignment: .bottom){
+                RecordingsView()
+                RecordButton(onSave: { recording in
+                    selectedRecording = recording
+                    showRecordingDetail = true
+                })
+            }
+            .fullScreenCover(isPresented: $showRecordingDetail) {
+                if let recording = selectedRecording {
+                    RecordingDetailView(recording: recording)
+                }
+            }
         }
     }
 }

@@ -155,13 +155,13 @@ struct WaveformView: View {
     var body: some View {
         Canvas { ctx, size in
             let barWidth: CGFloat = 2
-            let barSpacing: CGFloat = 3.5
+            let barSpacing: CGFloat = 4
             let availableWidth = size.width
             let barCount = max(1, Int((availableWidth + barSpacing) / (barWidth + barSpacing)))
             let totalBarWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
             let startX = (size.width - totalBarWidth) / 2
             let midY = size.height / 2
-            let maxBarHeight = size.height / 2.5
+            let maxBarHeight = size.height / 4.5
             let minBarHeight: CGFloat = 2
 
             for i in 0..<barCount {

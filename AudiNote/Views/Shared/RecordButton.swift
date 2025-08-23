@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import DSWaveformImageViews
 
 struct RecordButton: View {
     @StateObject private var recorder = AudioRecorder()
@@ -13,6 +14,7 @@ struct RecordButton: View {
     @Namespace private var animation
     
     var onRecordTapped: (() -> Void)? = nil
+    var onSave: ((Recording) -> Void)? = nil
     
     // Sample waveform data
     private let sampleAmplitudes: [CGFloat] = {
@@ -30,9 +32,9 @@ struct RecordButton: View {
                     showSheet = true
                 }) {
                     HStack(spacing: 12) {
-                        // Waveform takes up most space
-                        WaveformView(amplitudes: recorder.amplitudes, color: Color(.systemBackground))
-                            .frame(height: 20)
+                        // Custom bar waveform takes up most space
+                        CustomCompactWaveformView(samples: recorder.amplitudes.map { Float($0) })
+                        .frame(height: 20)
                         
                         Spacer()
                         
@@ -85,9 +87,11 @@ struct RecordButton: View {
         }
         .frame(maxWidth: .infinity)
         .sheet(isPresented: $showSheet) {
-            RecordingSheet(recorder: recorder)
-                .navigationTransition(.zoom(sourceID: "Record", in: animation))
-                .presentationDetents([.fraction(0.25)])
+            RecordingSheet(recorder: recorder) { savedRecording in
+                onSave?(savedRecording)
+            }
+            .navigationTransition(.zoom(sourceID: "Record", in: animation))
+            .presentationDetents([.fraction(0.25)])
         }
     }
     
@@ -106,5 +110,41 @@ struct PreviewContainer: View {
     }
 }
 
-#Preview { PreviewContainer() }
+struct CustomCompactWaveformView: View {
+    let samples: [Float]
+    
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<40, id: \.self) { index in
+                let amplitude = getAmplitude(for: index)
+                
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color(.systemBackground))
+                    .frame(
+                        width: 2,
+                        height: amplitude == 0 ? 2 : max(3, CGFloat(amplitude) * 16)
+                    )
+                    .opacity(amplitude == 0 ? 0.3 : 1.0)
+                    .animation(.easeOut(duration: 0.2), value: amplitude)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    
+    private func getAmplitude(for index: Int) -> Float {
+        guard !samples.isEmpty else { return 0.0 }
+        
+        // Show most recent samples on the right side
+        let totalBars = 40
+        let sampleIndex = samples.count - (totalBars - index)
+        
+        if sampleIndex >= 0 && sampleIndex < samples.count {
+            let rawAmplitude = samples[sampleIndex]
+            return rawAmplitude > 0.0 ? rawAmplitude : 0.0
+        } else {
+            return 0.0 // Complete silence for empty bars
+        }
+    }
+}
 
+#Preview { PreviewContainer() }
