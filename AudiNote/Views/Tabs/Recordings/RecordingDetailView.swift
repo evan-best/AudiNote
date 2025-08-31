@@ -13,8 +13,12 @@ struct RecordingDetailView: View {
     @StateObject private var audioPlayer = AudioPlayer()
     @Environment(\.dismiss) private var dismiss
     
+    init(recording: Recording) {
+        self.recording = recording
+        print("RecordingDetailView: Initializing with recording: \(recording.id)")
+    }
+    
     var body: some View {
-        NavigationStack {
             VStack(spacing: 12) {
                 Text(recording.title.isEmpty ? "Untitled" : recording.title)
                     .font(.title2).bold()
@@ -54,9 +58,6 @@ struct RecordingDetailView: View {
                 Spacer()
             }
             .padding()
-            .frame(maxWidth: 600)
-            .navigationTitle("Recording")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") {
@@ -64,7 +65,6 @@ struct RecordingDetailView: View {
                     }
                 }
             }
-        }
     }
     
     private func formatTime(_ time: TimeInterval) -> String {

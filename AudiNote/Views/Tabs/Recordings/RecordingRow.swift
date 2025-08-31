@@ -4,7 +4,7 @@ struct RecordingRow: View {
     let recording: Recording
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading) {
             Text(recording.title.isEmpty ? "Untitled" : recording.title)
                 .font(.headline)
             Text(recording.formattedDate)
@@ -19,12 +19,14 @@ struct RecordingRow: View {
 }
 
 #Preview {
-    RecordingRow(
-        recording: Recording(
-            title: "Sample Meeting",
-            timestamp: Date(),
-            duration: 110,
-            audioFilePath: "sample.m4a"
-        )
-    )
+	VStack(alignment: .leading) {
+		RecordingRow(
+			recording: Recording(
+				title: "Sample Meeting",
+				timestamp: Date(),
+				duration: 110,
+				audioFilePath: "sample.m4a"
+			)
+		)
+	}
 }

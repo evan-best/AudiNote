@@ -9,6 +9,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject private var session: SessionViewModel
+    @Environment(\.dismiss) private var dismiss
     @State private var showSignOutAlert = false
     @State private var notificationsEnabled = true
     @State private var recordingReminders = false
@@ -17,7 +18,9 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            VStack(spacing: 0) {
+                
+                Form {
                 Section("Notifications") {
                     Toggle("Enable Notifications", isOn: $notificationsEnabled)
                         .tint(.accentColor)
@@ -42,15 +45,6 @@ struct SettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-
-                Section("Appearance") {
-                    HStack {
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 20, height: 20)
-                        Text("Accent Color")
-                    }
-                }
                 
                 Section("Support") {
                     Link("Privacy Policy", destination: URL(string: "https://example.com/privacy")!)
@@ -67,6 +61,19 @@ struct SettingsView: View {
                     }
                 }
             }
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark")
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(action: saveSettings) {
+                        Image(systemName: "checkmark")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
             .navigationTitle("Settings")
             .alert("Sign Out", isPresented: $showSignOutAlert) {
                 Button("Cancel", role: .cancel) { }
@@ -76,7 +83,12 @@ struct SettingsView: View {
             } message: {
                 Text("Are you sure you want to sign out? You'll need to sign in again to access your recordings.")
             }
+            }
         }
+    }
+    
+    private func saveSettings() {
+        print("Settings saved")
     }
 }
 

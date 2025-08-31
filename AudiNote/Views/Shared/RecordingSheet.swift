@@ -10,20 +10,15 @@ import AVFoundation
 import Combine
 import SwiftData
 
-enum RecordingState {
-    case idle, recording, paused, error
-}
-
 struct RecordingSheet: View {
-    let recorder: AudioRecorder
+    @ObservedObject var recorder: AudioRecorder
     let onSave: ((Recording) -> Void)?
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @State private var state: RecordingState = .idle
     @State private var isSaving = false
     
     init(recorder: AudioRecorder, onSave: ((Recording) -> Void)? = nil) {
-        self.recorder = recorder
+        self._recorder = ObservedObject(initialValue: recorder)
         self.onSave = onSave
     }
 
@@ -34,7 +29,7 @@ struct RecordingSheet: View {
         VStack(spacing: 0) {
             // Waveform view - takes most of the space
             Group {
-                if state == .recording || state == .paused {
+                if recorder.isRecording || recorder.isPaused {
                     LiveScrollWaveformView(
                         recorder: recorder,
                         onCancel: {
@@ -44,86 +39,30 @@ struct RecordingSheet: View {
                             saveRecording()
                         }
                     )
-                } else {
-                    // Idle state - minimal placeholder
-                    VStack {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.1))
-                            .overlay(
-                                Text("Tap record to start")
-                                    .foregroundColor(.secondary)
-                                    .font(.caption)
-                            )
-                            .frame(height: 60)
-                            .padding(.horizontal, 16)
-                        
-                        Button("Record", systemImage: "record.circle") {
-                            guard state == .idle else { return }
-                            recorder.startRecording()
-                            state = .recording
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(.red)
-                        .padding(.top, 12)
-                    }
                 }
-            }
-
-            // Control buttons - compact bottom section
-            if state == .error {
-                VStack(spacing: 8) {
-                    Text("An error occurred during recording.")
-                        .foregroundColor(.red)
-                        .font(.caption)
-                        .multilineTextAlignment(.center)
-                    Button("Dismiss") { reset() }
-                        .buttonStyle(.bordered)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
             }
         }
         .onAppear {
-            // Set state based on recorder's current state
-            if recorder.isRecording {
-                state = .recording
-            } else if recorder.isPaused {
-                state = .paused
-            }
-        }
-        .onChange(of: recorder.isRecording) { isRecording in
-            // Only update state if we're not currently saving
-            if !isSaving {
-                if isRecording {
-                    state = .recording
-                } else if recorder.isPaused {
-                    state = .paused
-                } else if state != .idle {
-                    // Don't change to idle if we were recording (might be saving)
-                    state = .idle
-                }
-            }
-        }
-        .onChange(of: recorder.isPaused) { isPaused in
-            if !isSaving {
-                if isPaused {
-                    state = .paused
-                } else if recorder.isRecording {
-                    state = .recording
-                }
-            }
+            // No local state to sync; UI reacts to recorder directly.
         }
     }
 
-
     // MARK: - Save Functionality
-    
     private func saveRecording() {
-        guard !isSaving else { return }
-        
+        guard !isSaving else {
+            print("Already saving, skipping...")
+            return
+        }
         isSaving = true
+
+        print("Starting save process...")
+        print("Recording duration: \(recordingDuration)")
+        print("Last recording URL: \(lastRecordingURL?.path ?? "nil")")
         
-        // Create the recording object before stopping the recorder
+        // Stop recording first to finalize file and duration
+        recorder.stopRecording()
+        
+        // Create the recording object
         let newRecording = Recording(
             title: "New Recording",
             timestamp: Date(),
@@ -131,25 +70,26 @@ struct RecordingSheet: View {
             audioFilePath: lastRecordingURL?.path ?? ""
         )
         
-        // Stop recording
-        recorder.stopRecording()
+        print("Created recording object: \(newRecording.id)")
         
         // Insert and save immediately
         modelContext.insert(newRecording)
+        print("Inserted recording into context")
         
         do {
             try modelContext.save()
+            print("Successfully saved recording to database")
         } catch {
             print("Failed to save recording: \(error)")
         }
         
-        // Call the callback and dismiss immediately
+        // Call the callback and dismiss
+        print("Calling onSave callback and dismissing...")
         onSave?(newRecording)
         dismiss()
     }
 
     // MARK: - Helpers
-
     private func reset() {
         recorder.stopRecording()
         dismiss()
@@ -169,10 +109,10 @@ struct SheetPreviewContainer: View {
 
     var body: some View {
         Spacer()
-        RecordButton(onRecordTapped: { showSheet = true })
+		RecordButton(recorder: recorder, onRecordTapped: { showSheet = true })
             .matchedTransitionSource(id: "Record", in: animation)
             .sheet(isPresented: $showSheet) {
-                    RecordingSheet(recorder: recorder)
+                RecordingSheet(recorder: recorder)
                     .navigationTransition(.zoom(sourceID: "Record", in: animation))
                     .presentationDetents([.fraction(0.25)])
             }
@@ -182,5 +122,3 @@ struct SheetPreviewContainer: View {
 #Preview {
     SheetPreviewContainer()
 }
-
-

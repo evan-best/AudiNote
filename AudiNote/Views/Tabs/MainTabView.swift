@@ -27,7 +27,9 @@ struct MainTabView: View {
     @State private var selection: Tabs = .recordings
     @State private var showSheet: Bool = false
     @State private var showRecordingDetail = false
-    @State private var selectedRecording: Recording? = nil
+    @State private var recordingToShow: Recording? = nil
+    @Namespace private var animation
+    @StateObject private var recorder = AudioRecorder() // Single shared recorder
     
     private let sampleAmplitudes: [CGFloat] = (0..<50).map { i in
         let value = CGFloat(abs(sin(Double(i) * 0.3))) * 0.9 + 0.1
@@ -38,14 +40,41 @@ struct MainTabView: View {
         NavigationStack {
             ZStack(alignment: .bottom){
                 RecordingsView()
-                RecordButton(onSave: { recording in
-                    selectedRecording = recording
-                    showRecordingDetail = true
-                })
+                RecordButton(
+                    recorder: recorder,
+                    onRecordTapped: {
+                        // The button will call startRecording() before this,
+                        // so by the time we present, the sheet will see recording == true.
+                        showSheet = true
+                    },
+                    onSave: { recording in
+                        print("MainTabView: onSave called with recording: \(recording.id.uuidString)")
+                        recordingToShow = recording
+                        print("MainTabView: recordingToShow set to: \(recordingToShow?.id.uuidString ?? "nil")")
+                        // Small delay to allow the recording sheet to fully dismiss
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            print("MainTabView: About to show detail. recordingToShow: \(recordingToShow?.id.uuidString ?? "nil")")
+                            showRecordingDetail = true
+                            print("MainTabView: showRecordingDetail set to true after delay")
+                        }
+                    }
+                )
+            }
+            .sheet(isPresented: $showSheet) {
+                // Use the same shared recorder instance
+                RecordingSheet(recorder: recorder)
+                    .navigationTransition(.zoom(sourceID: "Record", in: animation))
+                    .presentationDetents([.fraction(0.25)])
+                    .presentationDragIndicator(.visible)
+                    .interactiveDismissDisabled(false)
             }
             .fullScreenCover(isPresented: $showRecordingDetail) {
-                if let recording = selectedRecording {
-                    RecordingDetailView(recording: recording)
+                Group {
+                    if let recording = recordingToShow {
+                        RecordingDetailView(recording: recording)
+                    } else {
+                        Text("Error: No recording selected")
+                    }
                 }
             }
         }

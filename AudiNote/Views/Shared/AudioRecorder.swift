@@ -77,7 +77,6 @@ class AudioRecorder: ObservableObject {
                 // Dispatch UI updates to MainActor for smooth performance
                 Task { @MainActor in
                     self.amplitudes.append(finalAmplitude)
-                    if self.amplitudes.count > 200 { self.amplitudes.removeFirst() }
                 }
             }
         }
@@ -134,7 +133,6 @@ class AudioRecorder: ObservableObject {
                 // Dispatch UI updates to MainActor for smooth performance
                 Task { @MainActor in
                     self.amplitudes.append(finalAmplitude)
-                    if self.amplitudes.count > 200 { self.amplitudes.removeFirst() }
                 }
             }
         }

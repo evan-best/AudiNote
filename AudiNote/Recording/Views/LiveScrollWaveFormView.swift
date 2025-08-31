@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 /// Centered, classic, fixed-bar live waveform display.
 /// Displays a fixed number of bars centered horizontally.
@@ -44,8 +45,8 @@ struct LiveScrollWaveformView: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
             
-            // Waveform
-            WaveformView(amplitudes: recorder.amplitudes)
+            // Waveform (using the simple centered view)
+            WaveformView(amplitudes: recorder.amplitudes, isPaused: recorder.isPaused)
                 .frame(height: 80)
                 .padding(.horizontal, 20)
                 .padding(.top, 30)
@@ -143,71 +144,202 @@ struct ProminentTranslucentButtonStyle: ButtonStyle {
     }
 }
 
+class WaveformRenderer: ObservableObject {
+    @Published private(set) var shouldUpdate: Bool = false
+    
+    private var displayLink: CADisplayLink?
+    private var isPaused = false
+    private var amplitudes: [CGFloat] = []
+    private var lastSize: CGSize = .zero
+    
+    // Pre-allocate arrays to avoid allocation overhead
+    private var cachedBars: [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] = []
+    private var barCount: Int = 0
+    private let barWidth: CGFloat = 2
+    private let barSpacing: CGFloat = 4
+    private lazy var step: CGFloat = barWidth + barSpacing
+    
+    // Cached layout values to avoid recalculation
+    private var centerStartX: CGFloat = 0
+    private var midY: CGFloat = 0
+    private let maxBarHeight: CGFloat = 20
+    private let minBarHeight: CGFloat = 2
+    
+    // Smooth scrolling variables
+    private var displayIndex: Double = 0.0  // Smooth floating-point index
+    private var targetIndex: Int = 0       // Where we want to be based on data
+	private let scrollSpeed: Double = 0.25   // How fast to catch up to new data
+    
+    
+    func start(amplitudes: [CGFloat]) {
+        updateAmplitudes(amplitudes)
+        
+        // Only start display link if not already running
+        if displayLink == nil {
+            displayLink = CADisplayLink(target: self, selector: #selector(frame))
+            displayLink?.preferredFramesPerSecond = 120
+            displayLink?.add(to: .current, forMode: .common)
+        }
+    }
+    
+    func updateAmplitudes(_ amplitudes: [CGFloat]) {
+        // Just use the amplitudes as provided - no internal truncation
+        self.amplitudes = amplitudes
+        self.targetIndex = max(0, amplitudes.count - 1)
+        
+        // Initialize displayIndex to current target if starting fresh
+        if displayIndex == 0.0 {
+            displayIndex = Double(targetIndex)
+        }
+    }
+    
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+    
+    func setPaused(_ paused: Bool) {
+        isPaused = paused
+    }
+    
+    func updateSize(_ size: CGSize) {
+        guard size != lastSize else { return }
+        lastSize = size
+        
+        // Recalculate layout values when size changes
+        let newBarCount = max(1, Int((size.width + barSpacing) / step))
+        let totalBarWidth = CGFloat(newBarCount) * barWidth + CGFloat(newBarCount - 1) * barSpacing
+        centerStartX = (size.width - totalBarWidth) / 2
+        midY = size.height / 2
+        
+        // Resize cached array if needed
+        if newBarCount != barCount {
+            barCount = newBarCount
+            cachedBars = Array(repeating: (x: 0, y: 0, width: barWidth, height: minBarHeight), count: barCount)
+        }
+    }
+    
+    @objc private func frame() {
+        guard lastSize != .zero, barCount > 0, !amplitudes.isEmpty else { return }
+        
+        // Update target based on latest data
+        targetIndex = max(0, amplitudes.count - 1)
+        
+        // Smoothly move displayIndex toward targetIndex when not paused
+        if !isPaused {
+            let distance = Double(targetIndex) - displayIndex
+            
+            
+            displayIndex += distance * scrollSpeed
+            // Clamp displayIndex to valid range
+            displayIndex = max(0, min(displayIndex, Double(amplitudes.count - 1)))
+        }
+        
+        // Update cached bars in-place - no allocations
+        let fractionalPart = displayIndex - floor(displayIndex)
+        let pixelOffset = CGFloat(fractionalPart) * step
+        
+        for i in 0..<barCount {
+            let wholeBarsFromRight = barCount - 1 - i
+            let baseIndex = Int(floor(displayIndex)) - wholeBarsFromRight
+            let amplitude: CGFloat
+            
+            if baseIndex >= 0 && baseIndex < amplitudes.count {
+                amplitude = amplitudes[baseIndex]
+            } else {
+                amplitude = 0.02
+            }
+            
+            let normalizedAmplitude = min(1.0, amplitude * 1.5)
+            let barHeight = minBarHeight + (maxBarHeight - minBarHeight) * normalizedAmplitude
+            
+            let x = centerStartX + CGFloat(i) * step - pixelOffset
+            let y = midY - barHeight
+            
+            cachedBars[i] = (x: x, y: y, width: barWidth, height: barHeight * 2)
+        }
+        
+        // Trigger minimal UI update
+        shouldUpdate.toggle()
+    }
+    
+    func getBars() -> [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] {
+        return cachedBars
+    }
+    
+    deinit {
+        stop()
+    }
+}
+
 struct WaveformView: View {
     let amplitudes: [CGFloat]
     let color: Color
+    let isPaused: Bool
+    @StateObject private var renderer = WaveformRenderer()
     
-    init(amplitudes: [CGFloat], color: Color = .primary) {
+    init(amplitudes: [CGFloat], color: Color = .primary, isPaused: Bool = false) {
         self.amplitudes = amplitudes
         self.color = color
+        self.isPaused = isPaused
     }
     
     var body: some View {
         Canvas { ctx, size in
-            let barWidth: CGFloat = 2
-            let barSpacing: CGFloat = 4
-            let availableWidth = size.width
-            let barCount = max(1, Int((availableWidth + barSpacing) / (barWidth + barSpacing)))
-            let totalBarWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
-            let startX = (size.width - totalBarWidth) / 2
-            let midY = size.height / 2
-            let maxBarHeight = size.height / 4.5
-            let minBarHeight: CGFloat = 2
-
-            for i in 0..<barCount {
-                let amplitude: CGFloat
-                if amplitudes.count >= barCount {
-                    let amplitudeIndex = amplitudes.count - barCount + i
-                    if amplitudeIndex >= 0 && amplitudeIndex < amplitudes.count {
-                        let rawAmplitude = amplitudes[amplitudeIndex]
-                        amplitude = min(1.0, rawAmplitude * 1.5)
-                    } else {
-                        amplitude = 0.02
-                    }
-                } else {
-                    amplitude = 0.02
-                }
-                
-                let barHeight = minBarHeight + (maxBarHeight - minBarHeight) * amplitude
-                let rect = CGRect(
-                    x: startX + CGFloat(i) * (barWidth + barSpacing),
-                    y: midY - barHeight,
-                    width: barWidth,
-                    height: barHeight * 2
-                )
-                let path = Path(roundedRect: rect, cornerRadius: barWidth / 2)
+            // Ultra-minimal UI thread work - access pre-allocated cached data
+            let bars = renderer.getBars()
+            for bar in bars {
+                let rect = CGRect(x: bar.x, y: bar.y, width: bar.width, height: bar.height)
+                let path = Path(roundedRect: rect, cornerRadius: 1)
                 ctx.fill(path, with: .color(color))
             }
         }
-        .animation(.linear(duration: 0.15), value: amplitudes.count)
-        .mask(
-            LinearGradient(
-                gradient: Gradient(stops: [
-                    .init(color: .clear, location: 0),
-                    .init(color: .black, location: 0.1),
-                    .init(color: .black, location: 0.9),
-                    .init(color: .clear, location: 1)
-                ]),
-                startPoint: .leading, endPoint: .trailing
-            )
-        )
+        .mask(gradientMask)
         .accessibilityHidden(true)
+        .onAppear {
+            renderer.start(amplitudes: amplitudes)
+        }
+        .onDisappear {
+            renderer.stop()
+        }
+        .onChange(of: isPaused) { _, paused in
+            renderer.setPaused(paused)
+        }
+        .onChange(of: amplitudes) { _, newAmplitudes in
+            renderer.updateAmplitudes(newAmplitudes)
+        }
+        .onGeometryChange(for: CGSize.self) { proxy in
+            proxy.size
+        } action: { size in
+            renderer.updateSize(size)
+        }
+        .onReceive(renderer.$shouldUpdate) { _ in
+            // Minimal update trigger for Canvas
+        }
     }
+}
+
+
+extension WaveformView {
+    private var gradientMask: some View {
+        LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black, location: 0.1),
+                .init(color: .black, location: 0.9),
+                .init(color: .clear, location: 1)
+            ]),
+            startPoint: .leading, endPoint: .trailing
+        )
+    }
+    
+    
+
 }
 
 private extension CGFloat {
     func clamped(to r: ClosedRange<CGFloat>) -> CGFloat {
-        return Swift.min(Swift.max(self, r.lowerBound), r.upperBound)
+        Swift.min(Swift.max(self, r.lowerBound), r.upperBound)
     }
 }
 

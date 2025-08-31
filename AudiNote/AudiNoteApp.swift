@@ -14,7 +14,7 @@ struct AudiNoteApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppRootView()
+            MainTabView()
                 .environmentObject(session)
         }
         .modelContainer(for: Recording.self)

@@ -7,10 +7,11 @@
 
 import SwiftUI
 import DSWaveformImageViews
+import SwiftData
 
 struct RecordButton: View {
-    @StateObject private var recorder = AudioRecorder()
-    @State private var showSheet = false
+    @ObservedObject var recorder: AudioRecorder
+    @Environment(\.modelContext) private var modelContext
     @Namespace private var animation
     
     var onRecordTapped: (() -> Void)? = nil
@@ -24,17 +25,24 @@ struct RecordButton: View {
         }
     }()
     
+    init(recorder: AudioRecorder, onRecordTapped: (() -> Void)? = nil, onSave: ((Recording) -> Void)? = nil) {
+        self.recorder = recorder
+        self.onRecordTapped = onRecordTapped
+        self.onSave = onSave
+    }
+    
     var body: some View {
         Group {
             if recorder.isRecording || recorder.isPaused {
                 // Show waveform in same button style
                 Button(action: {
-                    showSheet = true
+                    // Already recording; just present the sheet
+                    onRecordTapped?()
                 }) {
                     HStack(spacing: 12) {
                         // Waveform takes up most space
-                        WaveformView(amplitudes: recorder.amplitudes, color: Color(.systemBackground))
-                        .frame(height: 20)
+                        WaveformView(amplitudes: recorder.amplitudes, color: Color(.systemBackground), isPaused: recorder.isPaused)
+                            .frame(height: 20)
                         
                         Spacer()
                         
@@ -62,11 +70,14 @@ struct RecordButton: View {
                     .clipShape(Capsule())
                     .padding(.horizontal, 28)
                 }
-                .buttonStyle(PlainButtonStyle())
                 .matchedTransitionSource(id: "Record", in: animation)
             } else {
                 // Show record button when not recording
-                Button(action: startRecording) {
+                Button(action: {
+                    // Start recording BEFORE presenting the sheet
+                    startRecording()
+                    onRecordTapped?()
+                }) {
                     HStack(spacing: 4) {
                         Spacer()
                         Image(systemName:"record.circle.fill")
@@ -86,33 +97,53 @@ struct RecordButton: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .sheet(isPresented: $showSheet) {
-            RecordingSheet(recorder: recorder) { savedRecording in
-                onSave?(savedRecording)
-            }
-            .navigationTransition(.zoom(sourceID: "Record", in: animation))
-            .presentationDetents([.fraction(0.25)])
-        }
     }
     
     // MARK: - Actions
     private func startRecording() {
         recorder.startRecording()
-        onRecordTapped?()
+    }
+    
+    private func cancelRecording() {
+        recorder.stopRecording()
+    }
+    
+    private func saveRecording() {
+        let recordingDuration = recorder.elapsed
+        let lastRecordingURL = recorder.getLastRecordingURL()
         
-        // Small delay to allow button to transition to recording state before showing sheet
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            showSheet = true
+        // Create the recording object
+        let newRecording = Recording(
+            title: "New Recording",
+            timestamp: Date(),
+            duration: recordingDuration,
+            audioFilePath: lastRecordingURL?.path ?? ""
+        )
+        
+        // Stop recording
+        recorder.stopRecording()
+        
+        // Insert and save to database
+        modelContext.insert(newRecording)
+        
+        do {
+            try modelContext.save()
+            print("Successfully saved recording to database")
+        } catch {
+            print("Failed to save recording: \(error)")
         }
+        
+        // Call the callback if provided
+        onSave?(newRecording)
     }
 }
 
 struct PreviewContainer: View {
+    @StateObject private var recorder = AudioRecorder()
     var body: some View {
         Spacer()
-        RecordButton()
+        RecordButton(recorder: recorder)
     }
 }
-
 
 #Preview { PreviewContainer() }
