@@ -25,27 +25,6 @@ struct RecordingsView: View {
     @Namespace private var animation
     var body: some View {
         Group {
-            if sizeClass == .regular {
-                NavigationSplitView {
-                    recordingsList
-                        .navigationTitle("Recordings")
-                        .toolbar {
-                            ToolbarItem(placement: .topBarTrailing) {
-                                Button {
-                                    showSortSheet = true
-                                } label: {
-                                    Label("Sort By", systemImage: "line.3.horizontal.decrease")
-                                }
-                            }
-                        }
-                } detail: {
-                    detailView
-                }
-                .sheet(isPresented: $showSettings) {
-                    SettingsView()
-                        .navigationTransition(.zoom(sourceID: "Settings", in: animation))
-                }
-            } else {
                 recordingsList
                     .navigationTitle("Recordings")
                     .toolbar {
@@ -61,12 +40,11 @@ struct RecordingsView: View {
                         SettingsView()
                             .presentationDetents([.fraction(0.9)])
                     }
-                    .fullScreenCover(isPresented: $showDetailSheet) {
-                        if let recording = selectedRecording {
-                            RecordingDetailView(recording: recording)
-                        }
-                    }
-            }
+					.fullScreenCover(isPresented: $showDetailSheet) {
+						if let recording = selectedRecording {
+							RecordingDetailView(recording: recording)
+						}
+					}
         }
         .fullScreenCover(isPresented: $showDetailSheet) {
             if let recording = selectedRecording {
@@ -130,17 +108,6 @@ struct RecordingsView: View {
             SettingsView()
                 .navigationTransition(.zoom(sourceID: "Settings", in: animation))
         }
-    }
-
-    private var detailView: some View {
-        Group {
-            if let rec = selected ?? recordings.first {
-                RecordingDetailView(recording: rec)
-            } else {
-                ContentPlaceholderView(text: "Select a recording")
-            }
-        }
-        .navigationTitle("Details")
     }
 
     private func addItem() {

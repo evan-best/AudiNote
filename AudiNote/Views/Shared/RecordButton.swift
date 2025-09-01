@@ -92,7 +92,6 @@ struct RecordButton: View {
                     .clipShape(Capsule())
                     .padding(.horizontal, 28)
                 }
-                .buttonStyle(PlainButtonStyle())
                 .matchedTransitionSource(id: "Record", in: animation)
             }
         }
@@ -141,7 +140,6 @@ struct RecordButton: View {
 struct PreviewContainer: View {
     @StateObject private var recorder = AudioRecorder()
     var body: some View {
-        Spacer()
         RecordButton(recorder: recorder)
     }
 }

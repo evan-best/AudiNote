@@ -30,6 +30,7 @@ struct RecordingSheet: View {
             // Waveform view - takes most of the space
             Group {
                 if recorder.isRecording || recorder.isPaused {
+					Spacer()
                     LiveScrollWaveformView(
                         recorder: recorder,
                         onCancel: {
@@ -114,7 +115,7 @@ struct SheetPreviewContainer: View {
             .sheet(isPresented: $showSheet) {
                 RecordingSheet(recorder: recorder)
                     .navigationTransition(.zoom(sourceID: "Record", in: animation))
-                    .presentationDetents([.fraction(0.25)])
+					.presentationDetents([.fraction(0.25), .large])
             }
     }
 }

@@ -59,12 +59,13 @@ struct MainTabView: View {
                         }
                     }
                 )
+				.matchedTransitionSource(id: "Record", in: animation)
             }
             .sheet(isPresented: $showSheet) {
                 // Use the same shared recorder instance
                 RecordingSheet(recorder: recorder)
                     .navigationTransition(.zoom(sourceID: "Record", in: animation))
-                    .presentationDetents([.fraction(0.25)])
+                    .presentationDetents([.fraction(0.25), .large])
                     .presentationDragIndicator(.visible)
                     .interactiveDismissDisabled(false)
             }

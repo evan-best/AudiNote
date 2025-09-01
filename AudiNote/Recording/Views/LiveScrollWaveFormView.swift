@@ -14,6 +14,7 @@ import Combine
 struct LiveScrollWaveformView: View {
     @ObservedObject var recorder: AudioRecorder
     @State private var isRedDotVisible = true
+    @State private var showCancelConfirm = false
     var onCancel: (() -> Void)?
     var onDone: (() -> Void)?
     
@@ -55,8 +56,8 @@ struct LiveScrollWaveformView: View {
             HStack(spacing: 16) {
                 // Cancel button
                 Button(action: {
-                    recorder.stopRecording()
-                    onCancel?()
+                    // Ask for confirmation before canceling
+                    showCancelConfirm = true
                 }) {
                     HStack(spacing: 8) {
                         Image(systemName: "xmark")
@@ -66,6 +67,19 @@ struct LiveScrollWaveformView: View {
                     }
                 }
                 .buttonStyle(ProminentTranslucentButtonStyle(foreground: .red, background: .red, backgroundOpacity: 0.18))
+                .confirmationDialog(
+                    "Discard recording?",
+                    isPresented: $showCancelConfirm,
+                    titleVisibility: .visible
+                ) {
+                    Button("Discard Recording", role: .destructive) {
+                        recorder.stopRecording()
+                        onCancel?()
+                    }
+                    Button("Keep Recording", role: .cancel) { }
+                } message: {
+                    Text("Are you sure you want to cancel? This will discard the current recording.")
+                }
                 
                 // Pause/Resume button
                 Button(action: {
@@ -346,3 +360,4 @@ private extension CGFloat {
 #Preview {
     SheetPreviewContainer()
 }
+
