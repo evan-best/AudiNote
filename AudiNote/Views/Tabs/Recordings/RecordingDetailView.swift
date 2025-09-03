@@ -12,41 +12,49 @@ struct RecordingDetailView: View {
     let recording: Recording
     @StateObject private var audioPlayer = AudioPlayer()
     @Environment(\.dismiss) private var dismiss
-    
+    @State private var loadError: String?
+
     init(recording: Recording) {
         self.recording = recording
         print("RecordingDetailView: Initializing with recording: \(recording.id)")
     }
     
     var body: some View {
+        NavigationStack {
             VStack(spacing: 12) {
+                // Title and metadata
                 Text(recording.title.isEmpty ? "Untitled" : recording.title)
                     .font(.title2).bold()
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity, alignment: .center)
                 Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
                     .foregroundStyle(.secondary)
-                Text("Duration: \(Int(recording.duration))s")
+                Text("Duration: \(recording.formattedDuration)")
                     .foregroundStyle(.secondary)
                 
-                VStack(spacing: 8) {
+                // Player UI
+                VStack(spacing: 12) {
                     HStack(spacing: 16) {
                         Button(action: {
                             if audioPlayer.isPlaying {
                                 audioPlayer.pause()
                             } else {
                                 if audioPlayer.duration == 0 {
-                                    audioPlayer.load(url: URL(fileURLWithPath: recording.audioFilePath))
+                                    attemptLoadAudio()
                                 }
                                 audioPlayer.play()
                             }
                         }) {
                             Image(systemName: audioPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 36))
+                                .font(.system(size: 36, weight: .regular))
                         }
                         Text("\(formatTime(audioPlayer.currentTime)) / \(formatTime(audioPlayer.duration))")
                             .font(.footnote)
                             .foregroundColor(.secondary)
+                            .monospacedDigit()
                     }
-                    Slider(value: $audioPlayer.currentTime, in: 0...audioPlayer.duration, onEditingChanged: { editing in
+                    
+                    Slider(value: $audioPlayer.currentTime, in: 0...(audioPlayer.duration > 0 ? audioPlayer.duration : 1), onEditingChanged: { editing in
                         if !editing {
                             audioPlayer.seek(to: audioPlayer.currentTime)
                         }
@@ -55,25 +63,60 @@ struct RecordingDetailView: View {
                 }
                 .padding(.vertical, 6)
                 
+                if let loadError {
+                    Text(loadError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                } else if audioPlayer.duration == 0 {
+                    Text("Audio not loaded")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                
                 Spacer()
             }
             .padding()
+            .navigationTitle("Recording")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         dismiss()
                     }
                 }
             }
+            .onAppear {
+                // Try to load the audio once when the view appears
+                if audioPlayer.duration == 0 {
+                    attemptLoadAudio()
+                }
+            }
+        }
     }
     
+    private func attemptLoadAudio() {
+        loadError = nil
+        let path = recording.audioFilePath
+        guard !path.isEmpty else {
+            loadError = "No audio file path."
+            return
+        }
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            loadError = "Audio file not found at path."
+            return
+        }
+        audioPlayer.load(url: url)
+    }
+
     private func formatTime(_ time: TimeInterval) -> String {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
         return String(format: "%02d:%02d", minutes, seconds)
     }
 }
-    
 
 #Preview {
     RecordingDetailView(
@@ -85,4 +128,3 @@ struct RecordingDetailView: View {
         )
     )
 }
-

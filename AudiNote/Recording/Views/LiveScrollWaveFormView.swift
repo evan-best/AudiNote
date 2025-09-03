@@ -15,42 +15,93 @@ struct LiveScrollWaveformView: View {
     @ObservedObject var recorder: AudioRecorder
     @State private var isRedDotVisible = true
     @State private var showCancelConfirm = false
+    @State private var recordingTitle = "New Recording"
+    @State private var isEditingTitle = false
+    @FocusState private var isTitleFocused: Bool
+    let isLargeMode: Bool
     var onCancel: (() -> Void)?
-    var onDone: (() -> Void)?
+    var onDone: ((String) -> Void)?
+    
+    init(recorder: AudioRecorder, isLargeMode: Bool = false, onCancel: (() -> Void)? = nil, onDone: ((String) -> Void)? = nil) {
+        self._recorder = ObservedObject(initialValue: recorder)
+        self.isLargeMode = isLargeMode
+        self.onCancel = onCancel
+        self.onDone = onDone
+    }
     
     var body: some View {
         VStack(spacing: 0) {
-            // Top section with "Recording..." and timer
-            HStack {
-                Text("Recording...")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                HStack(spacing: 6) {
-                    // Blinking red dot
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 8, height: 8)
-                        .opacity(isRedDotVisible ? 1.0 : 0.3)
-                        .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: isRedDotVisible)
+            // Top section - different layouts for large vs small mode
+            if isLargeMode {
+                // Large mode: centered time display only
+                VStack(spacing: 8) {
+                    // Tappable title
+                    if isEditingTitle {
+                        TextField("Recording name", text: $recordingTitle)
+                            .font(.title.bold())
+                            .focused($isTitleFocused)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(1)
+                            .onSubmit {
+                                isEditingTitle = false
+                            }
+                    } else {
+                        Text(recordingTitle)
+                            .font(.title.bold())
+                            .lineLimit(1)
+                            .onTapGesture {
+                                isEditingTitle = true
+                                isTitleFocused = true
+                            }
+                    }
                     
-                    Text(recorder.elapsedTimeFormatted)
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.primary)
-                        .monospacedDigit()
-                        .frame(minWidth: 50, alignment: .leading)
+                    Spacer()
+                    
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 12, height: 12)
+                        
+                        Text(recorder.elapsedTimeFormatted)
+                            .font(.system(size: 48, weight: .medium, design: .rounded))
+                            .foregroundColor(.primary)
+                            .monospacedDigit()
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 20)
+                .padding(.top, 0)
+                .padding(.bottom, 20)
+            } else {
+                // Small mode: original layout
+                HStack {
+                    Text("Recording...")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.primary)
+                    
+                    Spacer()
+                    
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                        
+                        Text(recorder.elapsedTimeFormatted)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                            .monospacedDigit()
+                            .frame(minWidth: 50, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 20)
             
             // Waveform (using the simple centered view)
             WaveformView(amplitudes: recorder.amplitudes, isPaused: recorder.isPaused)
-                .frame(height: 80)
+                .frame(height: isLargeMode ? 120 : 80)
                 .padding(.horizontal, 20)
-                .padding(.top, 30)
+                .padding(.top, isLargeMode ? 10 : 30)
             
             // Bottom buttons
             HStack(spacing: 16) {
@@ -101,7 +152,7 @@ struct LiveScrollWaveformView: View {
                 // Done button
                 Button(action: {
                     recorder.stopRecording()
-                    onDone?()
+                    onDone?(recordingTitle)
                 }) {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark")
@@ -167,7 +218,7 @@ class WaveformRenderer: ObservableObject {
     private var lastSize: CGSize = .zero
     
     // Pre-allocate arrays to avoid allocation overhead
-    private var cachedBars: [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] = []
+    private var cachedBars: [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] = Array(repeating: (x: 0, y: 0, width: 2, height: 2), count: 200) // Fixed size for any screen
     private var barCount: Int = 0
     private let barWidth: CGFloat = 2
     private let barSpacing: CGFloat = 4
@@ -179,10 +230,8 @@ class WaveformRenderer: ObservableObject {
     private let maxBarHeight: CGFloat = 20
     private let minBarHeight: CGFloat = 2
     
-    // Smooth scrolling variables
-    private var displayIndex: Double = 0.0  // Smooth floating-point index
-    private var targetIndex: Int = 0       // Where we want to be based on data
-	private let scrollSpeed: Double = 0.25   // How fast to catch up to new data
+    // Ultra-simple scrolling
+    private var scrollPosition: Double = 0  // Continuous scroll position
     
     
     func start(amplitudes: [CGFloat]) {
@@ -191,7 +240,7 @@ class WaveformRenderer: ObservableObject {
         // Only start display link if not already running
         if displayLink == nil {
             displayLink = CADisplayLink(target: self, selector: #selector(frame))
-            displayLink?.preferredFramesPerSecond = 120
+            displayLink?.preferredFramesPerSecond = 120  // Keep smooth 120fps
             displayLink?.add(to: .current, forMode: .common)
         }
     }
@@ -199,12 +248,6 @@ class WaveformRenderer: ObservableObject {
     func updateAmplitudes(_ amplitudes: [CGFloat]) {
         // Just use the amplitudes as provided - no internal truncation
         self.amplitudes = amplitudes
-        self.targetIndex = max(0, amplitudes.count - 1)
-        
-        // Initialize displayIndex to current target if starting fresh
-        if displayIndex == 0.0 {
-            displayIndex = Double(targetIndex)
-        }
     }
     
     func stop() {
@@ -226,45 +269,38 @@ class WaveformRenderer: ObservableObject {
         centerStartX = (size.width - totalBarWidth) / 2
         midY = size.height / 2
         
-        // Resize cached array if needed
-        if newBarCount != barCount {
-            barCount = newBarCount
-            cachedBars = Array(repeating: (x: 0, y: 0, width: barWidth, height: minBarHeight), count: barCount)
-        }
+        // Just update barCount - array is pre-allocated
+        barCount = min(newBarCount, 200) // Cap at pre-allocated size
     }
     
     @objc private func frame() {
-        guard lastSize != .zero, barCount > 0, !amplitudes.isEmpty else { return }
+        guard lastSize != .zero, barCount > 0 else { return }
         
-        // Update target based on latest data
-        targetIndex = max(0, amplitudes.count - 1)
-        
-        // Smoothly move displayIndex toward targetIndex when not paused
+        // Ultra-simple constant increment
         if !isPaused {
-            let distance = Double(targetIndex) - displayIndex
-            
-            
-            displayIndex += distance * scrollSpeed
-            // Clamp displayIndex to valid range
-            displayIndex = max(0, min(displayIndex, Double(amplitudes.count - 1)))
+            scrollPosition += 0.25  // 0.125 * 120fps = 15 per second
         }
         
         // Update cached bars in-place - no allocations
-        let fractionalPart = displayIndex - floor(displayIndex)
+        let fractionalPart = scrollPosition - floor(scrollPosition)
         let pixelOffset = CGFloat(fractionalPart) * step
         
         for i in 0..<barCount {
-            let wholeBarsFromRight = barCount - 1 - i
-            let baseIndex = Int(floor(displayIndex)) - wholeBarsFromRight
-            let amplitude: CGFloat
+            let baseIndex = Int(scrollPosition) - (barCount - 1 - i)
             
-            if baseIndex >= 0 && baseIndex < amplitudes.count {
-                amplitude = amplitudes[baseIndex]
+            // Mock data: generate different bar heights based on position
+            let mockAmplitude: CGFloat
+            if baseIndex < 0 {
+                mockAmplitude = 0.02  // Empty bars before start
             } else {
-                amplitude = 0.02
+                // Create interesting pattern: sine wave + random variation
+                let phase = Double(baseIndex) * 0.3
+                let sineWave = sin(phase)
+                let randomVariation = sin(Double(baseIndex) * 1.7) * 0.3
+                mockAmplitude = CGFloat(abs(sineWave + randomVariation) * 0.8 + 0.2)
             }
             
-            let normalizedAmplitude = min(1.0, amplitude * 1.5)
+            let normalizedAmplitude = min(1.0, mockAmplitude * 1.5)
             let barHeight = minBarHeight + (maxBarHeight - minBarHeight) * normalizedAmplitude
             
             let x = centerStartX + CGFloat(i) * step - pixelOffset
@@ -290,7 +326,16 @@ struct WaveformView: View {
     let amplitudes: [CGFloat]
     let color: Color
     let isPaused: Bool
-    @StateObject private var renderer = WaveformRenderer()
+    @State private var animationOffset: Double = 0
+    @State private var timer: Timer?
+    @State private var waveformData: [CGFloat] = Array(repeating: 0.02, count: 10000) // Large fixed array
+    
+    // Stable layout constants
+    private let barWidth: CGFloat = 2
+    private let barSpacing: CGFloat = 4
+    private var step: CGFloat { barWidth + barSpacing }
+    private let maxBarHeight: CGFloat = 20
+    private let minBarHeight: CGFloat = 2
     
     init(amplitudes: [CGFloat], color: Color = .primary, isPaused: Bool = false) {
         self.amplitudes = amplitudes
@@ -300,10 +345,33 @@ struct WaveformView: View {
     
     var body: some View {
         Canvas { ctx, size in
-            // Ultra-minimal UI thread work - access pre-allocated cached data
-            let bars = renderer.getBars()
-            for bar in bars {
-                let rect = CGRect(x: bar.x, y: bar.y, width: bar.width, height: bar.height)
+            // Calculate layout once per size change
+            let barCount = max(1, Int((size.width + barSpacing) / step))
+            let totalBarWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
+            let centerStartX = (size.width - totalBarWidth) / 2
+            let midY = size.height / 2
+            
+            // Simple pixel offset - no complex fractional math
+            let pixelOffset = CGFloat(animationOffset.truncatingRemainder(dividingBy: 1.0)) * step
+            
+            for i in 0..<barCount {
+                let baseIndex = Int(animationOffset) - (barCount - 1 - i)
+                
+                // Get amplitude from fixed waveform data array
+                let amplitude: CGFloat
+                if baseIndex >= 0 && baseIndex < waveformData.count {
+                    amplitude = waveformData[baseIndex]
+                } else {
+                    amplitude = 0.02  // Default for out of bounds
+                }
+                
+                let normalizedAmplitude = min(1.0, amplitude * 1.5)
+                let barHeight = minBarHeight + (maxBarHeight - minBarHeight) * normalizedAmplitude
+                
+                let x = centerStartX + CGFloat(i) * step - pixelOffset
+                let y = midY - barHeight
+                
+                let rect = CGRect(x: x, y: y, width: barWidth, height: barHeight * 2)
                 let path = Path(roundedRect: rect, cornerRadius: 1)
                 ctx.fill(path, with: .color(color))
             }
@@ -311,24 +379,38 @@ struct WaveformView: View {
         .mask(gradientMask)
         .accessibilityHidden(true)
         .onAppear {
-            renderer.start(amplitudes: amplitudes)
+            startAnimation()
         }
         .onDisappear {
-            renderer.stop()
+            timer?.invalidate()
+            timer = nil
         }
         .onChange(of: isPaused) { _, paused in
-            renderer.setPaused(paused)
+            if paused {
+                timer?.invalidate()
+                timer = nil
+            } else {
+                startAnimation()
+            }
         }
         .onChange(of: amplitudes) { _, newAmplitudes in
-            renderer.updateAmplitudes(newAmplitudes)
+            // Only update with the newest amplitude data that just arrived
+            guard let latestAmplitude = newAmplitudes.last else { return }
+            
+            // Write at the current scroll position (this puts new data at the "writing head")
+            let currentWriteIndex = Int(animationOffset)
+            if currentWriteIndex >= 0 && currentWriteIndex < waveformData.count {
+                waveformData[currentWriteIndex] = latestAmplitude
+            }
         }
-        .onGeometryChange(for: CGSize.self) { proxy in
-            proxy.size
-        } action: { size in
-            renderer.updateSize(size)
-        }
-        .onReceive(renderer.$shouldUpdate) { _ in
-            // Minimal update trigger for Canvas
+    }
+    
+    private func startAnimation() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0/120.0, repeats: true) { _ in
+            if !isPaused {
+                animationOffset += 0.15 
+            }
         }
     }
 }
@@ -360,4 +442,3 @@ private extension CGFloat {
 #Preview {
     SheetPreviewContainer()
 }
-

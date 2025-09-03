@@ -1,5 +1,7 @@
 import SwiftUI
 import SwiftData
+import Combine
+internal import CoreData
 
 enum RecordingSortOption: String, CaseIterable, Identifiable {
     case date = "Date"
@@ -12,10 +14,9 @@ struct RecordingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     
-    @Query(sort: \Recording.timestamp, order: .reverse) private var recordings: [Recording]
+    @State private var recordings: [Recording] = []
     @State private var selected: Recording?
     @State private var showSettings = false
-    @State private var showDetailSheet = false
     @State private var selectedRecording: Recording?
     @State private var showSortSheet = false
     
@@ -24,32 +25,55 @@ struct RecordingsView: View {
     
     @Namespace private var animation
     var body: some View {
-        Group {
-                recordingsList
-                    .navigationTitle("Recordings")
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarTrailing) {
-                            Button {
-                                showSortSheet = true
-                            } label: {
-                                Label("Sort By", systemImage: "line.3.horizontal.decrease")
-                            }
+        NavigationStack {
+            recordingsList
+                .navigationTitle("Recordings")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showSortSheet = true
+                        } label: {
+                            Label("Sort By", systemImage: "line.3.horizontal.decrease")
                         }
                     }
-                    .sheet(isPresented: $showSettings) {
-                        SettingsView()
-                            .presentationDetents([.fraction(0.9)])
+                    ToolbarItem (placement: .topBarTrailing){
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("Settings", systemImage: "gearshape")
+                                .foregroundColor(colorScheme == .dark ? .white : .black)
+                                .matchedTransitionSource(id: "Settings", in: animation)
+                        }
                     }
-					.fullScreenCover(isPresented: $showDetailSheet) {
-						if let recording = selectedRecording {
-							RecordingDetailView(recording: recording)
-						}
-					}
-        }
-        .fullScreenCover(isPresented: $showDetailSheet) {
-            if let recording = selectedRecording {
-                RecordingDetailView(recording: recording)
-            }
+                    ToolbarItem(placement: .topBarLeading) {
+                        EditButton()
+                    }
+                }
+                .sheet(isPresented: $showSettings) {
+                    SettingsView()
+                        .presentationDetents([.fraction(0.9)])
+                        .navigationTransition(.zoom(sourceID: "Settings", in: animation))
+                }
+                .fullScreenCover(item: $selectedRecording) { recording in
+                    RecordingDetailView(recording: recording)
+                }
+                .onAppear {
+                    print("RecordingsView onAppear. modelContext: \(String(describing: modelContext))")
+                    fetchRecordings()
+                    debugRecordings()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
+                    print("Core Data context did save notification received - fetching recordings")
+                    fetchRecordings()
+                    debugRecordings()
+                }
+                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RecordingSaved"))) { _ in
+                    print("Recording saved notification received - refreshing list")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        fetchRecordings()
+                        debugRecordings()
+                    }
+                }
         }
         .sheet(isPresented: $showSortSheet) {
             SortSheetView(selectedSort: selectedSort,
@@ -76,38 +100,40 @@ struct RecordingsView: View {
                 : recordings.sorted { $0.duration > $1.duration }
         }
     }
+    
+    private var displayRecordings: [Recording] {
+        return sortedRecordings
+    }
+    
 
     private var recordingsList: some View {
         List {
-            ForEach(sortedRecordings, id: \.id) { recording in
-                Button {
-                    selectedRecording = recording
-                    showDetailSheet = true
-                } label: {
-                    RecordingRowView(recording: recording)
+            Section {
+                if displayRecordings.isEmpty {
+                    Text("No recordings yet")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 40)
+                } else {
+                    ForEach(displayRecordings) { recording in
+                        Button {
+                            print("Row tapped: \(recording.id)")
+                            selectedRecording = recording
+                        } label: {
+                            RecordingRow(recording: recording)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .listRowSeparator(.hidden)
+                    }
+                    .onDelete(perform: deleteItems)
                 }
-                .buttonStyle(PlainButtonStyle())
             }
-            .onDelete(perform: deleteItems)
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                EditButton()
-            }
-            ToolbarItem (placement: .topBarTrailing){
-                Button {
-                    showSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                        .foregroundColor(colorScheme == .dark ? .white : .black)
-                }
-            }
-            .matchedTransitionSource(id: "Settings", in: animation)
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-                .navigationTransition(.zoom(sourceID: "Settings", in: animation))
-        }
+        .listStyle(.plain)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets())
     }
 
     private func addItem() {
@@ -117,22 +143,46 @@ struct RecordingsView: View {
                                  duration: 0,
                                  audioFilePath: "")
             modelContext.insert(item)
+            do {
+                try modelContext.save()
+            } catch {
+                print("Failed saving after addItem(): \(error)")
+            }
             selected = item
         }
     }
 
     private func deleteItems(at offsets: IndexSet) {
         withAnimation {
-            offsets.map { recordings[$0] }.forEach(modelContext.delete)
+            let recordingsToDelete = offsets.map { displayRecordings[$0] }
+            recordingsToDelete.forEach(modelContext.delete)
+            do {
+                try modelContext.save()
+                print("Successfully deleted \(recordingsToDelete.count) recording(s)")
+            } catch {
+                print("Failed saving after delete: \(error)")
+            }
+        }
+    }
+    
+    private func fetchRecordings() {
+        do {
+            let fetchDescriptor = FetchDescriptor<Recording>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
+            let fetchedRecordings = try modelContext.fetch(fetchDescriptor)
+            print("Fetched \(fetchedRecordings.count) recordings from database")
+            recordings = fetchedRecordings
+        } catch {
+            print("Failed to fetch recordings: \(error)")
         }
     }
     
     private func debugRecordings() {
-        print("RecordingsView: Debug - Total recordings: \(recordings.count)")
+        print("RecordingsView: Debug - Total recordings in state: \(recordings.count)")
         for recording in recordings {
             print("  - ID: \(recording.id), Title: \(recording.title), Duration: \(recording.duration), Path: \(recording.audioFilePath)")
         }
     }
+    
 }
 
 private struct ContentPlaceholderView: View {
@@ -142,19 +192,6 @@ private struct ContentPlaceholderView: View {
             Color(.systemBackground).ignoresSafeArea()
             Text(text).foregroundStyle(.secondary)
         }
-    }
-}
-
-private struct RecordingRowView: View {
-    let recording: Recording
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(recording.title.isEmpty ? "Untitled" : recording.title)
-                .font(.headline)
-            Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -180,13 +217,11 @@ private struct SortSheetView: View {
     
     var body: some View {
         VStack(spacing: 18) {
-            // Grabber
             RoundedRectangle(cornerRadius: 3)
                 .frame(width: 40, height: 5)
                 .foregroundColor(Color.secondary.opacity(0.4))
                 .padding(.top, 8)
             
-            // Title pill with icon and text
             HStack(spacing: 8) {
                 Text("Sort By")
                     .font(.system(size: 18, weight: .semibold))
@@ -211,7 +246,7 @@ private struct SortSheetView: View {
                     .frame(maxWidth: .infinity)
                     .padding()
                     .background(colorScheme == .dark ? Color.white : Color.black)
-                    .foregroundColor(colorScheme == .dark ? Color.black : Color.black)
+                    .foregroundColor(colorScheme == .dark ? Color.black : Color.white)
                     .fontWeight(.semibold)
                     .clipShape(Capsule())
             }
@@ -234,7 +269,7 @@ private struct SortSheetView: View {
                 Spacer()
                 ZStack {
                     Circle()
-						.stroke(Color(.systemGray4), lineWidth: 2)
+                        .stroke(Color(.systemGray4), lineWidth: 2)
                         .frame(width: 22, height: 22)
                     if localSort == sort && localAscending == ascending {
                         Circle()

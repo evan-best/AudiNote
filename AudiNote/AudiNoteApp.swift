@@ -11,13 +11,19 @@ import SwiftData
 @main
 struct AudiNoteApp: App {
     @StateObject private var session = SessionViewModel()
-
+    
     var body: some Scene {
         WindowGroup {
-            MainTabView()
-                .environmentObject(session)
+            if session.isAuthenticated {
+                MainTabView()
+                    .environmentObject(session)
+            } else {
+                OnboardingView()
+                    .environmentObject(session)
+            }
         }
         .modelContainer(for: Recording.self)
     }
 }
+
 
