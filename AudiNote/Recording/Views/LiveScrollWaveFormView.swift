@@ -18,6 +18,7 @@ struct LiveScrollWaveformView: View {
     @State private var recordingTitle = "New Recording"
     @State private var isEditingTitle = false
     @FocusState private var isTitleFocused: Bool
+    @EnvironmentObject private var session: SessionViewModel
     let isLargeMode: Bool
     var onCancel: (() -> Void)?
     var onDone: ((String) -> Void)?
@@ -107,6 +108,8 @@ struct LiveScrollWaveformView: View {
             HStack(spacing: 16) {
                 // Cancel button
                 Button(action: {
+                    // Haptic feedback for cancel
+                    session.triggerHaptic(style: .light)
                     // Ask for confirmation before canceling
                     showCancelConfirm = true
                 }) {
@@ -134,6 +137,9 @@ struct LiveScrollWaveformView: View {
                 
                 // Pause/Resume button
                 Button(action: {
+                    // Haptic feedback for pause/resume
+                    session.triggerHaptic(style: .medium)
+                    
                     if recorder.isPaused {
                         recorder.resumeRecording()
                     } else {
@@ -151,6 +157,9 @@ struct LiveScrollWaveformView: View {
                 
                 // Done button
                 Button(action: {
+                    // Haptic feedback for done
+                    session.triggerHaptic(style: .heavy)
+                    
                     recorder.stopRecording()
                     onDone?(recordingTitle)
                 }) {
@@ -280,6 +289,7 @@ class WaveformRenderer: ObservableObject {
         if !isPaused {
             scrollPosition += 0.25  // 0.125 * 120fps = 15 per second
         }
+		
         
         // Update cached bars in-place - no allocations
         let fractionalPart = scrollPosition - floor(scrollPosition)
@@ -328,9 +338,9 @@ struct WaveformView: View {
     let isPaused: Bool
     @State private var animationOffset: Double = 0
     @State private var timer: Timer?
-    @State private var waveformData: [CGFloat] = Array(repeating: 0.02, count: 10000) // Large fixed array
+    @State private var waveformData: [CGFloat] = Array(repeating: 0.02, count: 10000)
     
-    // Stable layout constants
+    // Stable layout constants - back to original
     private let barWidth: CGFloat = 2
     private let barSpacing: CGFloat = 4
     private var step: CGFloat { barWidth + barSpacing }
@@ -345,19 +355,20 @@ struct WaveformView: View {
     
     var body: some View {
         Canvas { ctx, size in
-            // Calculate layout once per size change
+            // Back to original layout calculation - don't cache, just calculate
             let barCount = max(1, Int((size.width + barSpacing) / step))
             let totalBarWidth = CGFloat(barCount) * barWidth + CGFloat(barCount - 1) * barSpacing
             let centerStartX = (size.width - totalBarWidth) / 2
             let midY = size.height / 2
             
-            // Simple pixel offset - no complex fractional math
+            // Back to original simple pixel offset
             let pixelOffset = CGFloat(animationOffset.truncatingRemainder(dividingBy: 1.0)) * step
             
+            // Back to original simple rendering loop
             for i in 0..<barCount {
                 let baseIndex = Int(animationOffset) - (barCount - 1 - i)
                 
-                // Get amplitude from fixed waveform data array
+                // Back to original data access pattern
                 let amplitude: CGFloat
                 if baseIndex >= 0 && baseIndex < waveformData.count {
                     amplitude = waveformData[baseIndex]
@@ -394,10 +405,9 @@ struct WaveformView: View {
             }
         }
         .onChange(of: amplitudes) { _, newAmplitudes in
-            // Only update with the newest amplitude data that just arrived
+            // Back to original data writing
             guard let latestAmplitude = newAmplitudes.last else { return }
             
-            // Write at the current scroll position (this puts new data at the "writing head")
             let currentWriteIndex = Int(animationOffset)
             if currentWriteIndex >= 0 && currentWriteIndex < waveformData.count {
                 waveformData[currentWriteIndex] = latestAmplitude
@@ -407,9 +417,10 @@ struct WaveformView: View {
     
     private func startAnimation() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 1.0/120.0, repeats: true) { _ in
+        // Use 60fps instead of 120fps for better device performance
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
             if !isPaused {
-                animationOffset += 0.15 
+                animationOffset += 0.30  
             }
         }
     }

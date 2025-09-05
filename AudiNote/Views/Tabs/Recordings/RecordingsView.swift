@@ -13,6 +13,7 @@ struct RecordingsView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var session: SessionViewModel
     
     @State private var recordings: [Recording] = []
     @State private var selected: Recording?
@@ -22,41 +23,53 @@ struct RecordingsView: View {
     
     @State private var selectedSort: RecordingSortOption = .date
     @State private var ascending: Bool = false
+    @State private var showDeleteAlert = false
+    @State private var recordingsToDelete: [Recording] = []
     
     @Namespace private var animation
     var body: some View {
         NavigationStack {
             recordingsList
                 .navigationTitle("Recordings")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showSortSheet = true
-                        } label: {
-                            Label("Sort By", systemImage: "line.3.horizontal.decrease")
-                        }
-                    }
-                    ToolbarItem (placement: .topBarTrailing){
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label("Settings", systemImage: "gearshape")
-                                .foregroundColor(colorScheme == .dark ? .white : .black)
-                                .matchedTransitionSource(id: "Settings", in: animation)
-                        }
-                    }
-                    ToolbarItem(placement: .topBarLeading) {
-                        EditButton()
-                    }
-                }
-                .sheet(isPresented: $showSettings) {
-                    SettingsView()
-                        .presentationDetents([.fraction(0.9)])
-                        .navigationTransition(.zoom(sourceID: "Settings", in: animation))
-                }
-                .fullScreenCover(item: $selectedRecording) { recording in
+                .navigationBarTitleDisplayMode(.large)
+				.navigationSubtitle("Record, transcribe, and share.")
+                .navigationDestination(for: Recording.self) { recording in
                     RecordingDetailView(recording: recording)
                 }
+                .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        session.triggerHaptic(style: .light)
+                        showSortSheet = true
+                    } label: {
+                        Label("Sort By", systemImage: "line.3.horizontal.decrease")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        session.triggerHaptic(style: .light)
+                        showSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    EditButton()
+                        .onTapGesture {
+                            session.triggerHaptic(style: .light)
+                        }
+                }
+            }
+            .sheet(isPresented: $showSortSheet) {
+                SortSheetView(
+                    selectedSort: $selectedSort,
+                    ascending: $ascending
+                )
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+        }
                 .onAppear {
                     print("RecordingsView onAppear. modelContext: \(String(describing: modelContext))")
                     fetchRecordings()
@@ -74,18 +87,6 @@ struct RecordingsView: View {
                         debugRecordings()
                     }
                 }
-        }
-        .sheet(isPresented: $showSortSheet) {
-            SortSheetView(selectedSort: selectedSort,
-                          ascending: ascending,
-                          onDismiss: { didChange, sort, asc in
-                if didChange {
-                    selectedSort = sort
-                    ascending = asc
-                }
-                showSortSheet = false
-            })
-        }
     }
 
     private var sortedRecordings: [Recording] {
@@ -108,36 +109,43 @@ struct RecordingsView: View {
 
     private var recordingsList: some View {
         List {
-            Section {
-                if displayRecordings.isEmpty {
-                    Text("No recordings yet")
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.vertical, 40)
-                } else {
-                    ForEach(displayRecordings) { recording in
-                        Button {
-                            print("Row tapped: \(recording.id)")
-                            selectedRecording = recording
-                        } label: {
-                            RecordingRow(recording: recording)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .listRowSeparator(.hidden)
+            if displayRecordings.isEmpty {
+                Text("No recordings yet")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 40)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(displayRecordings) { recording in
+                    NavigationLink(value: recording) {
+                        RecordingRow(recording: recording)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .padding(.bottom, 12)
                     }
-                    .onDelete(perform: deleteItems)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 16))
+                    .listRowSeparator(.visible)
                 }
+                .onDelete(perform: confirmDelete)
             }
         }
+		.listRowSpacing(4.0)
         .listStyle(.plain)
-        .listRowSeparator(.hidden)
-        .listRowInsets(EdgeInsets())
+        .alert("Delete Recording", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                deleteRecordings()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(recordingsToDelete.count == 1 ? 
+                 "Are you sure you want to delete this recording? This action cannot be undone." :
+                 "Are you sure you want to delete these \(recordingsToDelete.count) recordings? This action cannot be undone.")
+        }
     }
 
     private func addItem() {
-        withAnimation {
+        withAnimation(.easeInOut(duration: 0.3)) {
             let item = Recording(title: "New Recording",
                                  timestamp: Date(),
                                  duration: 0,
@@ -152,9 +160,13 @@ struct RecordingsView: View {
         }
     }
 
-    private func deleteItems(at offsets: IndexSet) {
+    private func confirmDelete(at offsets: IndexSet) {
+        recordingsToDelete = offsets.map { displayRecordings[$0] }
+        showDeleteAlert = true
+    }
+    
+    private func deleteRecordings() {
         withAnimation {
-            let recordingsToDelete = offsets.map { displayRecordings[$0] }
             recordingsToDelete.forEach(modelContext.delete)
             do {
                 try modelContext.save()
@@ -162,6 +174,7 @@ struct RecordingsView: View {
             } catch {
                 print("Failed saving after delete: \(error)")
             }
+            recordingsToDelete = []
         }
     }
     
@@ -197,26 +210,14 @@ private struct ContentPlaceholderView: View {
 
 private struct SortSheetView: View {
     @Environment(\.colorScheme) private var colorScheme
-
-    let selectedSort: RecordingSortOption
-    let ascending: Bool
-    let onDismiss: (_ didChange: Bool, _ selectedSort: RecordingSortOption, _ ascending: Bool) -> Void
-    
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: SessionViewModel
     
-    @State private var localSort: RecordingSortOption
-    @State private var localAscending: Bool
-     
-    init(selectedSort: RecordingSortOption, ascending: Bool, onDismiss: @escaping (_ didChange: Bool, _ selectedSort: RecordingSortOption, _ ascending: Bool) -> Void) {
-        self.selectedSort = selectedSort
-        self.ascending = ascending
-        self.onDismiss = onDismiss
-        _localSort = State(initialValue: selectedSort)
-        _localAscending = State(initialValue: ascending)
-    }
+    @Binding var selectedSort: RecordingSortOption
+    @Binding var ascending: Bool
     
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
             RoundedRectangle(cornerRadius: 3)
                 .frame(width: 40, height: 5)
                 .foregroundColor(Color.secondary.opacity(0.4))
@@ -227,20 +228,20 @@ private struct SortSheetView: View {
                     .font(.system(size: 18, weight: .semibold))
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 6)
+            .padding(.vertical, 4)
             
             VStack(spacing: 16) {
-                sortRow(title: "Newest", sort: .date, ascending: false)
-                sortRow(title: "Oldest", sort: .date, ascending: true)
-                sortRow(title: "Longest", sort: .length, ascending: false)
-                sortRow(title: "Shortest", sort: .length, ascending: true)
+                sortRow(title: "Newest", sort: .date, isAscending: false)
+                sortRow(title: "Oldest", sort: .date, isAscending: true)
+                sortRow(title: "Longest", sort: .length, isAscending: false)
+                sortRow(title: "Shortest", sort: .length, isAscending: true)
             }
             .padding(.horizontal, 32)
-            .padding(.top, 14)
             Spacer()
             
             Button {
-                onDismiss(true, localSort, localAscending)
+                session.triggerHaptic(style: .light)
+                dismiss()
             } label: {
                 Text("Continue")
                     .frame(maxWidth: .infinity)
@@ -252,26 +253,30 @@ private struct SortSheetView: View {
             }
             .padding(.horizontal, 24)
         }
-        .presentationDetents([.fraction(0.45)])
+        .presentationDetents([.fraction(0.4)])
     }
     
     @ViewBuilder
-    private func sortRow(title: String, sort: RecordingSortOption, ascending: Bool) -> some View {
+    private func sortRow(title: String, sort: RecordingSortOption, isAscending: Bool) -> some View {
         Button {
-            localSort = sort
-            self.localAscending = ascending
+            session.triggerHaptic(style: .light)
+            
+            withAnimation(.easeInOut(duration: 0.3)) {
+                selectedSort = sort
+                ascending = isAscending
+            }
         } label: {
             HStack {
                 Text(title)
                     .font(.system(size: 18))
                     .foregroundColor(.primary)
-                    .fontWeight(localSort == sort && localAscending == ascending ? .semibold : .regular)
+                    .fontWeight(selectedSort == sort && ascending == isAscending ? .semibold : .regular)
                 Spacer()
                 ZStack {
                     Circle()
                         .stroke(Color(.systemGray4), lineWidth: 2)
                         .frame(width: 22, height: 22)
-                    if localSort == sort && localAscending == ascending {
+                    if selectedSort == sort && ascending == isAscending {
                         Circle()
                             .fill(Color.accent)
                             .frame(width: 12, height: 12)
@@ -284,5 +289,5 @@ private struct SortSheetView: View {
 }
 
 #Preview {
-    MainTabView()
+	RecordingsView()
 }

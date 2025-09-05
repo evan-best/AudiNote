@@ -78,12 +78,17 @@ struct RecordingSheet: View {
         // Stop recording first to finalize file and duration
         recorder.stopRecording()
         
+        // Random tags for demo purposes
+        let allTags = ["Meeting", "Interview", "Lecture", "Note", "Idea", "Memo", "Call", "Music", "Practice", "Important", "Work", "Personal", "Study", "Creative"]
+        let randomTags = Array(allTags.shuffled().prefix(Int.random(in: 1...3)))
+        
         // Create the recording object
         let newRecording = Recording(
             title: title,
             timestamp: Date(),
             duration: recordingDuration,
-            audioFilePath: lastRecordingURL?.path ?? ""
+            audioFilePath: lastRecordingURL?.path ?? "",
+            tags: randomTags
         )
         
         print("Created recording object: \(newRecording.id)")

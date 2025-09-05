@@ -12,6 +12,7 @@ struct RecordingDetailView: View {
     let recording: Recording
     @StateObject private var audioPlayer = AudioPlayer()
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var session: SessionViewModel
     @State private var loadError: String?
 
     init(recording: Recording) {
@@ -20,13 +21,7 @@ struct RecordingDetailView: View {
     }
     
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 12) {
-                // Title and metadata
-                Text(recording.title.isEmpty ? "Untitled" : recording.title)
-                    .font(.title2).bold()
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity, alignment: .center)
+        VStack(spacing: 12) {
                 Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
                     .foregroundStyle(.secondary)
                 Text("Duration: \(recording.formattedDuration)")
@@ -36,6 +31,7 @@ struct RecordingDetailView: View {
                 VStack(spacing: 12) {
                     HStack(spacing: 16) {
                         Button(action: {
+                            session.triggerHaptic(style: .light)
                             if audioPlayer.isPlaying {
                                 audioPlayer.pause()
                             } else {
@@ -78,11 +74,12 @@ struct RecordingDetailView: View {
                 Spacer()
             }
             .padding()
-            .navigationTitle("Recording")
+			.navigationTitle(recording.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
+                        session.triggerHaptic(style: .light)
                         dismiss()
                     }
                 }
@@ -94,7 +91,6 @@ struct RecordingDetailView: View {
                 }
             }
         }
-    }
     
     private func attemptLoadAudio() {
         loadError = nil

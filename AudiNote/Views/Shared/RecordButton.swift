@@ -12,11 +12,15 @@ import SwiftData
 struct RecordButton: View {
     @ObservedObject var recorder: AudioRecorder
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var session: SessionViewModel
     @Namespace private var animation
-    
+
     var onRecordTapped: (() -> Void)? = nil
     var onSave: ((Recording) -> Void)? = nil
-    
+
+    // Permission alert state
+    @State private var showMicAlert = false
+
     // Sample waveform data
     private let sampleAmplitudes: [CGFloat] = {
         (0..<50).map { i in
@@ -36,6 +40,8 @@ struct RecordButton: View {
             if recorder.isRecording || recorder.isPaused {
                 // Show waveform in same button style
                 Button(action: {
+                    // Haptic feedback for waveform tap
+                    session.triggerHaptic(style: .medium)
                     // Already recording; just present the sheet
                     onRecordTapped?()
                 }) {
@@ -74,9 +80,18 @@ struct RecordButton: View {
             } else {
                 // Show record button when not recording
                 Button(action: {
-                    // Start recording BEFORE presenting the sheet
-                    startRecording()
-                    onRecordTapped?()
+                    Task { @MainActor in
+                        // Haptic feedback for record button tap
+                        session.triggerHaptic(style: .heavy)
+                        
+                        let granted = await recorder.ensureMicrophonePermission()
+                        if granted {
+                            startRecording()
+                            onRecordTapped?()
+                        } else {
+                            showMicAlert = true
+                        }
+                    }
                 }) {
                     HStack(spacing: 4) {
                         Spacer()
@@ -93,6 +108,16 @@ struct RecordButton: View {
                     .padding(.horizontal, 28)
                 }
                 .matchedTransitionSource(id: "Record", in: animation)
+                .alert("Microphone Access Needed", isPresented: $showMicAlert) {
+                    Button("Open Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) {
+                            UIApplication.shared.open(url, options: [:], completionHandler: nil)
+                        }
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text("AudiNote needs access to your microphone to record audio. You can enable access in Settings.")
+                }
             }
         }
         .frame(maxWidth: .infinity)
