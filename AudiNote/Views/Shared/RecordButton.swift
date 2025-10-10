@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import DSWaveformImageViews
 import SwiftData
 
 struct RecordButton: View {
@@ -169,4 +168,8 @@ struct PreviewContainer: View {
     }
 }
 
-#Preview { PreviewContainer() }
+#Preview {
+	PreviewContainer()
+		.environmentObject(SessionViewModel())
+		.modelContainer(for: Recording.self)
+}

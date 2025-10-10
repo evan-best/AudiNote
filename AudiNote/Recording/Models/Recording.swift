@@ -9,8 +9,7 @@ import Foundation
 import SwiftData
 
 @Model
-final class Recording: Identifiable {
-    var id = UUID()
+final class Recording {
     var title: String = ""
     var timestamp: Date = Date()
     var duration: Double = 0.0
@@ -21,7 +20,7 @@ final class Recording: Identifiable {
     var isUploaded: Bool = false
     var isStarred: Bool = false
     var tags: [String] = []
-    
+
     init(
         title: String = "",
         timestamp: Date = Date(),

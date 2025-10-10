@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AudiNote is an iOS audio recording and note-taking app built with Swift and SwiftUI. The app allows users to record audio, manage recordings, and potentially generate automatic transcriptions and notes.
+AudiNote is an iOS audio recording and note-taking app built with Swift and SwiftUI. The app allows users to record audio and manage recordings.
 
 ## Build Commands
 
@@ -33,7 +33,7 @@ xcodebuild -project AudiNote.xcodeproj -scheme AudiNote clean
 
 #### Models (`AudiNote/Models/`)
 - **Recording.swift**: Core data model with SwiftData `@Model` decorator
-  - Stores audio file metadata, timestamps, transcription state
+  - Stores audio file metadata, timestamps
   - Includes computed properties for UI formatting (duration, dates)
 
 #### ViewModels (`AudiNote/ViewModels/`)

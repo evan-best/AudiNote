@@ -34,18 +34,12 @@ struct MainTabView: View {
 				recorder: recorder,
 				onRecordTapped: {
 					showSheet = true
-				},
-				onSave: { recording in
-					print("MainTabView: onSave called with recording: \(recording.id.uuidString)")
 				}
 			)
 			.matchedTransitionSource(id: "Record", in: animation)
 		}
 		.sheet(isPresented: $showSheet) {
-			// Use the same shared recorder instance
-			RecordingSheet(recorder: recorder, presentationDetent: detent) { recording in
-				print("MainTabView: RecordingSheet onSave called with recording: \(recording.id.uuidString)")
-			}
+			RecordingSheet(recorder: recorder, presentationDetent: detent)
 			.environment(\.modelContext, modelContext)
 			.navigationTransition(.zoom(sourceID: "Record", in: animation))
 			.presentationDetents([.fraction(0.25), .large], selection: $detent)

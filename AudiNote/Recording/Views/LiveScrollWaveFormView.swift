@@ -6,11 +6,9 @@
 //
 
 import SwiftUI
+import SwiftData
 import Combine
 
-/// Centered, classic, fixed-bar live waveform display.
-/// Displays a fixed number of bars centered horizontally.
-/// Only a few bars near the center react to the most recent amplitude.
 struct LiveScrollWaveformView: View {
     @ObservedObject var recorder: AudioRecorder
     @State private var isRedDotVisible = true
@@ -18,12 +16,13 @@ struct LiveScrollWaveformView: View {
     @State private var recordingTitle = "New Recording"
     @State private var isEditingTitle = false
     @FocusState private var isTitleFocused: Bool
+    @State private var isNoiseReductionEnabled = false
     @EnvironmentObject private var session: SessionViewModel
     let isLargeMode: Bool
     var onCancel: (() -> Void)?
-    var onDone: ((String) -> Void)?
+    var onDone: ((String, String) -> Void)?
     
-    init(recorder: AudioRecorder, isLargeMode: Bool = false, onCancel: (() -> Void)? = nil, onDone: ((String) -> Void)? = nil) {
+    init(recorder: AudioRecorder, isLargeMode: Bool = false, onCancel: (() -> Void)? = nil, onDone: ((String, String) -> Void)? = nil) {
         self._recorder = ObservedObject(initialValue: recorder)
         self.isLargeMode = isLargeMode
         self.onCancel = onCancel
@@ -34,7 +33,7 @@ struct LiveScrollWaveformView: View {
         VStack(spacing: 0) {
             // Top section - different layouts for large vs small mode
             if isLargeMode {
-                // Large mode: centered time display only
+                // Large mode: centered time display
                 VStack(spacing: 8) {
                     // Tappable title
                     if isEditingTitle {
@@ -55,7 +54,8 @@ struct LiveScrollWaveformView: View {
                                 isTitleFocused = true
                             }
                     }
-                    
+
+
                     Spacer()
                     
                     HStack(spacing: 10) {
@@ -98,11 +98,20 @@ struct LiveScrollWaveformView: View {
                 .padding(.top, 20)
             }
             
-            // Waveform (using the simple centered view)
-            WaveformView(amplitudes: recorder.amplitudes, isPaused: recorder.isPaused)
-                .frame(height: isLargeMode ? 120 : 80)
-                .padding(.horizontal, 20)
-                .padding(.top, isLargeMode ? 10 : 30)
+            // Waveform section
+            if isLargeMode {
+                // Waveform for large mode
+                WaveformView(amplitudes: recorder.amplitudes, isPaused: recorder.isPaused)
+                    .frame(height: 120)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 10)
+            } else {
+                // Small mode: waveform
+                WaveformView(amplitudes: recorder.amplitudes, isPaused: recorder.isPaused)
+                    .frame(height: 80)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+            }
             
             // Bottom buttons
             HStack(spacing: 16) {
@@ -159,9 +168,9 @@ struct LiveScrollWaveformView: View {
                 Button(action: {
                     // Haptic feedback for done
                     session.triggerHaptic(style: .heavy)
-                    
+
                     recorder.stopRecording()
-                    onDone?(recordingTitle)
+                    onDone?(recordingTitle, "")
                 }) {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark")
@@ -289,7 +298,6 @@ class WaveformRenderer: ObservableObject {
         if !isPaused {
             scrollPosition += 0.25  // 0.125 * 120fps = 15 per second
         }
-		
         
         // Update cached bars in-place - no allocations
         let fractionalPart = scrollPosition - floor(scrollPosition)
@@ -339,6 +347,8 @@ struct WaveformView: View {
     @State private var animationOffset: Double = 0
     @State private var timer: Timer?
     @State private var waveformData: [CGFloat] = Array(repeating: 0.02, count: 10000)
+    @State private var lastAmplitudeUpdate: Date = Date()
+    @State private var pendingAmplitude: CGFloat?
     
     // Stable layout constants - back to original
     private let barWidth: CGFloat = 2
@@ -405,23 +415,45 @@ struct WaveformView: View {
             }
         }
         .onChange(of: amplitudes) { _, newAmplitudes in
-            // Back to original data writing
+            // Debounce amplitude updates to prevent multiple updates per frame
             guard let latestAmplitude = newAmplitudes.last else { return }
-            
-            let currentWriteIndex = Int(animationOffset)
-            if currentWriteIndex >= 0 && currentWriteIndex < waveformData.count {
-                waveformData[currentWriteIndex] = latestAmplitude
+
+            let now = Date()
+            let timeSinceLastUpdate = now.timeIntervalSince(lastAmplitudeUpdate)
+
+            // Only update if enough time has passed (33ms = ~30fps to reduce frame pressure)
+            if timeSinceLastUpdate > 0.033 {
+                updateWaveformData(with: latestAmplitude)
+                lastAmplitudeUpdate = now
+                pendingAmplitude = nil
+            } else {
+                // Store pending amplitude for next update cycle
+                pendingAmplitude = latestAmplitude
             }
         }
     }
     
     private func startAnimation() {
         timer?.invalidate()
-        // Use 60fps instead of 120fps for better device performance
+        // Use 30fps for better performance and less frame pressure
         timer = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
             if !isPaused {
-                animationOffset += 0.30  
+                animationOffset += 0.30
+
+                // Process any pending amplitude updates
+                if let pending = pendingAmplitude {
+                    updateWaveformData(with: pending)
+                    pendingAmplitude = nil
+                    lastAmplitudeUpdate = Date()
+                }
             }
+        }
+    }
+    
+    private func updateWaveformData(with amplitude: CGFloat) {
+        let currentWriteIndex = Int(animationOffset)
+        if currentWriteIndex >= 0 && currentWriteIndex < waveformData.count {
+            waveformData[currentWriteIndex] = amplitude
         }
     }
 }
@@ -450,6 +482,36 @@ private extension CGFloat {
     }
 }
 
-#Preview {
-    SheetPreviewContainer()
+#Preview("Live Waveform") {
+    struct PreviewContainer: View {
+        @StateObject private var recorder = AudioRecorder(previewMode: true)
+        @StateObject private var session = SessionViewModel()
+
+        var body: some View {
+            LiveScrollWaveformView(
+                recorder: recorder,
+                isLargeMode: true,
+                onCancel: {
+                    // Handle cancel
+                },
+                onDone: { title, transcript in
+                    print("Done with title: \(title)")
+                }
+            )
+            .onAppear {
+                // Start mock recording
+                recorder.isRecording = true
+                recorder.elapsed = 0
+
+                // Simulate elapsed time
+                Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+                    recorder.elapsed += 1
+                }
+            }
+            .environmentObject(session)
+        }
+    }
+
+    return PreviewContainer()
+        .modelContainer(for: Recording.self)
 }
