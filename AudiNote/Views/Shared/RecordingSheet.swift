@@ -18,6 +18,7 @@ struct SheetHeightPreferenceKey: PreferenceKey {
 struct RecordingSheet: View {
     @ObservedObject var recorder: AudioRecorder
     let presentationDetent: PresentationDetent
+    let onSave: (Recording) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var isSaving = false
@@ -27,9 +28,10 @@ struct RecordingSheet: View {
         presentationDetent == .large
     }
 
-    init(recorder: AudioRecorder, presentationDetent: PresentationDetent = .fraction(0.25)) {
+    init(recorder: AudioRecorder, presentationDetent: PresentationDetent = .fraction(0.25), onSave: @escaping (Recording) -> Void) {
         self._recorder = ObservedObject(initialValue: recorder)
         self.presentationDetent = presentationDetent
+        self.onSave = onSave
     }
 
     var body: some View {
@@ -65,8 +67,9 @@ struct RecordingSheet: View {
 
         Task { @MainActor in
             do {
-                _ = try manager.saveRecording(title: title, transcript: transcript)
+                let recording = try manager.saveRecording(title: title, transcript: transcript)
                 dismiss()
+                onSave(recording)
             } catch {
                 print("Save failed: \(error)")
             }
@@ -77,19 +80,35 @@ struct RecordingSheet: View {
 
 struct SheetPreviewContainer: View {
     @State private var showSheet = false
-    @StateObject private var recorder = AudioRecorder()
+    @StateObject private var recorder = AudioRecorder(previewMode: true)
     @Namespace private var animation
-    @State private var detent: PresentationDetent = .fraction(0.25)
+    @State private var detent: PresentationDetent = .large
 
     var body: some View {
-        Spacer()
-        RecordButton(recorder: recorder, onRecordTapped: { showSheet = true })
+        VStack {
+            Spacer()
+            RecordButton(recorder: recorder, onRecordTapped: {
+                showSheet = true
+                recorder.startRecording()
+            })
             .matchedTransitionSource(id: "Record", in: animation)
-            .sheet(isPresented: $showSheet) {
-                RecordingSheet(recorder: recorder, presentationDetent: detent)
-                    .navigationTransition(.zoom(sourceID: "Record", in: animation))
-                    .presentationDetents([.fraction(0.25), .large], selection: $detent)
+        }
+        .sheet(isPresented: $showSheet) {
+            RecordingSheet(recorder: recorder, presentationDetent: detent) { _ in
+                showSheet = false
             }
+            .navigationTransition(.zoom(sourceID: "Record", in: animation))
+            .presentationDetents([.fraction(0.25), .large], selection: $detent)
+        }
+        .onAppear {
+            // Auto-start recording in preview for immediate styling feedback
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                if !showSheet {
+                    showSheet = true
+                    recorder.startRecording()
+                }
+            }
+        }
     }
 }
 

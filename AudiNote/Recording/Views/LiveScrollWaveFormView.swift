@@ -33,7 +33,7 @@ struct LiveScrollWaveformView: View {
         VStack(spacing: 0) {
             // Top section - different layouts for large vs small mode
             if isLargeMode {
-                // Large mode: centered time display
+                // Large mode: centered time display with transcription above
                 VStack(spacing: 8) {
                     // Tappable title
                     if isEditingTitle {
@@ -55,14 +55,18 @@ struct LiveScrollWaveformView: View {
                             }
                     }
 
+                    // Live transcription - shows last few segments with effects
+                    TranscriptionStackView(
+                        finalizedSegments: recorder.finalizedSegments,
+                        currentTranscript: recorder.currentTranscript
+                    )
 
-                    Spacer()
-                    
+                    // Timer
                     HStack(spacing: 10) {
                         Circle()
                             .fill(Color.red)
                             .frame(width: 12, height: 12)
-                        
+
                         Text(recorder.elapsedTimeFormatted)
                             .font(.system(size: 48, weight: .medium, design: .rounded))
                             .foregroundColor(.primary)
@@ -112,7 +116,9 @@ struct LiveScrollWaveformView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
             }
-            
+
+            Spacer()
+
             // Bottom buttons
             HStack(spacing: 16) {
                 // Cancel button
@@ -482,36 +488,304 @@ private extension CGFloat {
     }
 }
 
+// MARK: - Transcription Stack View
+// Shows finalized segments and current transcript with alternating left/right alignment
+
+struct TranscriptionStackView: View {
+	let finalizedSegments: [TranscriptSegment]
+	let currentTranscript: String
+	
+	var body: some View {
+		GeometryReader { geometry in
+			ScrollViewReader { proxy in
+				ScrollView(showsIndicators: false) {
+					VStack(alignment: .leading, spacing: 16) {
+						// All finalized segments (full opacity)
+						ForEach(Array(finalizedSegments.enumerated()), id: \.element.id) { index, segment in
+							TranscriptTextRow(
+								text: segment.text,
+								timestamp: segment.formattedTimestamp,
+								isStreaming: false,
+								alignment: .leading
+							)
+							.id(segment.id)
+						}
+						
+						// Current in-progress transcript
+						if !currentTranscript.isEmpty {
+							TranscriptTextRow(
+								text: currentTranscript,
+								timestamp: nil,
+								isStreaming: true,
+								alignment: .leading
+							)
+							.id("streaming")
+						}
+					}
+					.frame(maxWidth: .infinity)
+					.padding(.horizontal, 8)
+					.padding(.top, 50)
+					.padding(.bottom, 80) // Extra padding at bottom to prevent cutoff
+				}
+				.frame(width: geometry.size.width, height: geometry.size.height)
+				.overlay(
+					VStack(spacing: 0) {
+						// Top blur fade
+						LinearGradient(
+							colors: [
+								Color(.systemBackground),
+								Color(.systemBackground).opacity(0)
+							],
+							startPoint: .top,
+							endPoint: .bottom
+						)
+						.frame(height: 50)
+						
+						Spacer()
+						
+						// Bottom blur fade
+						LinearGradient(
+							colors: [
+								Color(.systemBackground).opacity(0),
+								Color(.systemBackground)
+							],
+							startPoint: .top,
+							endPoint: .bottom
+						)
+						.frame(height: 50)
+					}
+						.allowsHitTesting(false)
+				)
+				.onChange(of: finalizedSegments.count) { _, _ in
+					// Auto-scroll to second-to-last segment so the new one appears at the bottom
+					if finalizedSegments.count >= 2 {
+						let secondToLast = finalizedSegments[finalizedSegments.count - 2]
+						withAnimation(.easeOut(duration: 0.3)) {
+							proxy.scrollTo(secondToLast.id, anchor: .center)
+						}
+					} else if let lastSegment = finalizedSegments.last {
+						withAnimation(.easeOut(duration: 0.3)) {
+							proxy.scrollTo(lastSegment.id, anchor: .center)
+						}
+					}
+				}
+				.onChange(of: currentTranscript) { _, newValue in
+					// Auto-scroll to show streaming text
+					if !newValue.isEmpty, let lastSegment = finalizedSegments.last {
+						withAnimation(.easeOut(duration: 0.3)) {
+							proxy.scrollTo(lastSegment.id, anchor: .center)
+						}
+					}
+				}
+			}
+		}
+	}
+	
+	// Individual transcript text row with typewriter/streaming effect
+	struct TranscriptTextRow: View {
+		let text: String
+		let timestamp: String?
+		let isStreaming: Bool
+		let alignment: HorizontalAlignment
+		
+		@State private var animationTime: Double = 0
+		@State private var lastText: String = ""
+		
+		var body: some View {
+			VStack(alignment: alignment == .leading ? .leading : .trailing, spacing: 4) {
+				// Timestamp (if available)
+				if let timestamp = timestamp {
+					HStack {
+						if alignment == .trailing {
+							Spacer()
+						}
+						
+						Text(timestamp)
+							.font(.system(size: 11, weight: .medium))
+							.foregroundColor(.secondary.opacity(0.6))
+						
+						if alignment == .leading {
+							Spacer()
+						}
+					}
+				}
+				
+				// Transcript text
+				HStack {
+					if alignment == .trailing {
+						Spacer()
+					}
+					
+					if isStreaming {
+						// Streaming text - no animation, just show it
+						Text(text)
+							.font(.system(size: 18))
+							.foregroundColor(.secondary)
+							.multilineTextAlignment(alignment == .leading ? .leading : .trailing)
+							.fixedSize(horizontal: false, vertical: true)
+					} else {
+						// Finalized text - animate when it appears
+						Text(text)
+							.font(.system(size: 24))
+							.fontWeight(.medium)
+							.foregroundColor(.primary)
+							.multilineTextAlignment(alignment == .leading ? .leading : .trailing)
+							.fixedSize(horizontal: false, vertical: true)
+							.textRenderer(StreamingTextRenderer(elapsedTime: animationTime))
+							.task(id: text) {
+								// Animate when sentence is finalized
+								animationTime = 0
+								
+								// Smooth animation over text length
+								let totalDuration = Double(text.count) * 0.015 + 0.2
+								let steps = 60 // 60 fps
+								let increment = totalDuration / Double(steps)
+								
+								for _ in 0..<steps {
+									try? await Task.sleep(nanoseconds: UInt64(increment * 1_000_000_000))
+									animationTime += increment
+								}
+							}
+					}
+					
+					if alignment == .leading {
+						Spacer()
+					}
+				}
+			}
+			.frame(maxWidth: .infinity)
+		}
+	}
+	
+	// Streaming text renderer with per-character fade-in effect
+	struct StreamingTextRenderer: TextRenderer, Animatable {
+		var elapsedTime: Double = 0
+		
+		var animatableData: Double {
+			get { elapsedTime }
+			set { elapsedTime = newValue }
+		}
+		
+		func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+			var charIndex = 0
+			
+			for line in layout {
+				for run in line {
+					for (index, slice) in run.enumerated() {
+						// Calculate opacity based on character index and elapsed time
+						// Smooth, fast animation: 15ms delay per character, 100ms fade
+						let delay = Double(charIndex) * 0.015 // 15ms delay per character
+						let progress = max(0, min(1, (elapsedTime - delay) / 0.1)) // 100ms fade duration
+						
+						var copy = context
+						copy.opacity = progress
+						copy.draw(slice)
+						
+						charIndex += 1
+					}
+				}
+			}
+		}
+	}
+}
+
+#Preview("Live Transcription Stack") {
+	struct TranscriptionPreview: View {
+		@State private var currentTranscript = "and we're planning to expand"
+		@State private var segments: [TranscriptSegment] = [
+			TranscriptSegment(text: "Welcome to today's meeting", timestamp: 0, duration: 2.5),
+			TranscriptSegment(text: "Let's review the quarterly results", timestamp: 2.5, duration: 2.8),
+			TranscriptSegment(text: "Revenue is up fifteen percent", timestamp: 5.3, duration: 2.2)
+		]
+
+		var body: some View {
+			VStack(spacing: 0) {
+				// Title
+				Text("Preview Recording")
+					.font(.title.bold())
+					.padding(.top, 20)
+
+				// Transcription area
+				TranscriptionStackView(
+					finalizedSegments: segments,
+					currentTranscript: currentTranscript
+				)
+				.frame(height: 500) // Give it explicit height
+
+				// Timer for context
+				HStack(spacing: 10) {
+					Circle()
+						.fill(Color.red)
+						.frame(width: 12, height: 12)
+
+					Text("00:47")
+						.font(.system(size: 48, weight: .medium, design: .rounded))
+						.foregroundColor(.primary)
+						.monospacedDigit()
+				}
+				.padding(.bottom, 20)
+			}
+			.frame(maxWidth: .infinity, maxHeight: .infinity)
+			.background(Color(.systemBackground))
+			.onAppear {
+				// Simulate live transcription updates
+				Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+					// Cycle through different current transcripts
+					let samples = [
+						"and we're planning to expand",
+						"our team is working hard on",
+						"the new features will be released",
+						"customer feedback has been positive"
+					]
+					currentTranscript = samples.randomElement() ?? ""
+
+					// Occasionally add a new finalized segment
+					if Bool.random() {
+						let newSegment = TranscriptSegment(
+							text: samples.randomElement() ?? "",
+							timestamp: Double(segments.count) * 2.5,
+							duration: 2.5
+						)
+						segments.append(newSegment)
+					}
+				}
+			}
+		}
+	}
+
+	return TranscriptionPreview()
+}
+
 #Preview("Live Waveform") {
-    struct PreviewContainer: View {
-        @StateObject private var recorder = AudioRecorder(previewMode: true)
-        @StateObject private var session = SessionViewModel()
+	struct PreviewContainer: View {
+		@StateObject private var recorder = AudioRecorder(previewMode: true)
+		@StateObject private var session = SessionViewModel()
 
-        var body: some View {
-            LiveScrollWaveformView(
-                recorder: recorder,
-                isLargeMode: true,
-                onCancel: {
-                    // Handle cancel
-                },
-                onDone: { title, transcript in
-                    print("Done with title: \(title)")
-                }
-            )
-            .onAppear {
-                // Start mock recording
-                recorder.isRecording = true
-                recorder.elapsed = 0
+		var body: some View {
+			LiveScrollWaveformView(
+				recorder: recorder,
+				isLargeMode: true,
+				onCancel: {
+					// Handle cancel
+				},
+				onDone: { title, transcript in
+					print("Done with title: \(title)")
+				}
+			)
+			.onAppear {
+				// Start mock recording
+				recorder.isRecording = true
+				recorder.elapsed = 0
 
-                // Simulate elapsed time
-                Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
-                    recorder.elapsed += 1
-                }
-            }
-            .environmentObject(session)
-        }
-    }
+				// Simulate elapsed time
+				Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { timer in
+					recorder.elapsed += 1
+				}
+			}
+			.environmentObject(session)
+		}
+	}
 
-    return PreviewContainer()
-        .modelContainer(for: Recording.self)
+	return PreviewContainer()
+		.modelContainer(for: Recording.self)
 }

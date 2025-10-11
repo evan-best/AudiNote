@@ -15,8 +15,10 @@ final class Recording {
     var duration: Double = 0.0
     var audioFilePath: String = ""
     var transcript: String?
+    var transcriptSegments: Data? // Store TranscriptSegment array as JSON
     var notes: String?
     var isTranscribed: Bool = false
+    var isTranscribing: Bool = false
     var isUploaded: Bool = false
     var isStarred: Bool = false
     var tags: [String] = []
@@ -27,8 +29,10 @@ final class Recording {
         duration: Double = 0.0,
         audioFilePath: String = "",
         transcript: String? = nil,
+        transcriptSegments: [TranscriptSegment]? = nil,
         notes: String? = nil,
         isTranscribed: Bool = false,
+        isTranscribing: Bool = false,
         isUploaded: Bool = false,
         isStarred: Bool = false,
         tags: [String] = []
@@ -40,9 +44,29 @@ final class Recording {
         self.transcript = transcript
         self.notes = notes
         self.isTranscribed = isTranscribed
+        self.isTranscribing = isTranscribing
         self.isUploaded = isUploaded
         self.isStarred = isStarred
         self.tags = tags
+
+        // Encode transcript segments to Data
+        if let segments = transcriptSegments {
+            self.transcriptSegments = try? JSONEncoder().encode(segments)
+        }
+    }
+
+    // Computed property to decode transcript segments
+    var decodedTranscriptSegments: [TranscriptSegment] {
+        guard let data = transcriptSegments else { return [] }
+        return (try? JSONDecoder().decode([TranscriptSegment].self, from: data)) ?? []
+    }
+
+    // Update transcript segments
+    func updateTranscriptSegments(_ segments: [TranscriptSegment]) {
+        self.transcriptSegments = try? JSONEncoder().encode(segments)
+        self.transcript = segments.map { $0.text }.joined(separator: " ")
+        self.isTranscribed = !segments.isEmpty
+        self.isTranscribing = false
     }
     
     // MARK: - Computed Helpers

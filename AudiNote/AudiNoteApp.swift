@@ -19,7 +19,7 @@ struct AudiNoteApp: App {
         let schema = Schema([Recording.self])
 
         // Use a versioned database name to allow fresh starts when schema changes
-        let dbName = "AudiNote_v2"
+        let dbName = "AudiNote_v3"
 
         // First, try simple local storage (most reliable for development)
         do {

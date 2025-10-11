@@ -1,7 +1,5 @@
 import SwiftUI
 import SwiftData
-import Combine
-internal import CoreData
 
 enum RecordingSortOption: String, CaseIterable, Identifiable {
     case date = "Date"
@@ -10,26 +8,21 @@ enum RecordingSortOption: String, CaseIterable, Identifiable {
 }
 
 struct RecordingsView: View {
-    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var session: SessionViewModel
 
     @Query(sort: \Recording.timestamp, order: .reverse) private var recordings: [Recording]
+    @Binding var navigationPath: NavigationPath
 
-    @State private var selected: Recording?
     @State private var showSettings = false
-    @State private var selectedRecording: Recording?
     @State private var showSortSheet = false
-
     @State private var selectedSort: RecordingSortOption = .date
     @State private var ascending: Bool = false
     @State private var showDeleteAlert = false
     @State private var recordingsToDelete: [Recording] = []
-
-    @Namespace private var animation
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             recordingsList
                 .navigationTitle("Recordings")
                 .navigationBarTitleDisplayMode(.large)
@@ -130,22 +123,6 @@ struct RecordingsView: View {
         }
     }
 
-    private func addItem() {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            let item = Recording(title: "New Recording",
-                                 timestamp: Date(),
-                                 duration: 0,
-                                 audioFilePath: "")
-            modelContext.insert(item)
-            do {
-                try modelContext.save()
-            } catch {
-                print("Failed saving after addItem(): \(error)")
-            }
-            selected = item
-        }
-    }
-
     private func confirmDelete(at offsets: IndexSet) {
         recordingsToDelete = offsets.map { displayRecordings[$0] }
         showDeleteAlert = true
@@ -160,16 +137,6 @@ struct RecordingsView: View {
                 print("Failed to delete: \(error)")
             }
             recordingsToDelete = []
-        }
-    }
-}
-
-private struct ContentPlaceholderView: View {
-    let text: String
-    var body: some View {
-        ZStack {
-            Color(.systemBackground).ignoresSafeArea()
-            Text(text).foregroundStyle(.secondary)
         }
     }
 }
@@ -255,5 +222,5 @@ private struct SortSheetView: View {
 }
 
 #Preview {
-	RecordingsView()
+    RecordingsView(navigationPath: .constant(NavigationPath()))
 }

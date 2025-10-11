@@ -1,24 +1,40 @@
 import AVFoundation
 import Combine
 import UIKit
+import Speech
 
 class AudioRecorder: ObservableObject {
-    var audioRecorder: AVAudioRecorder?
-
     @Published var elapsed: TimeInterval = 0
     @Published var amplitudes: [CGFloat] = []
     @Published var isRecording = false
     @Published var isPaused = false
     @Published var micPermission: AVAudioSession.RecordPermission = AVAudioSession.sharedInstance().recordPermission
 
+    // Transcription - conversation pieces
+    @Published var currentTranscript: String = ""
+    @Published var finalizedSegments: [TranscriptSegment] = []
+
+    // Legacy property for compatibility
+    @Published var liveTranscript: String = ""
+
     private var timer: Timer?
     private(set) var lastRecordingURL: URL?
-    private var frameCounter = 0
     private var recordingStartTime: Date?
     private var pausedDuration: TimeInterval = 0
     private var lastPauseTime: Date?
     private var noiseReductionEnabled: Bool = false
     public private(set) var isPreviewMode: Bool = false
+
+    // AVAudioEngine for unified recording + transcription
+    private var audioEngine: AVAudioEngine?
+    private var audioFile: AVAudioFile?
+    private var transcriptionService: TranscriptionService?
+    private var audioConverter: AVAudioConverter?
+    private var transcriptionFormat: AVAudioFormat?
+    private var currentTranscriptCancellable: AnyCancellable?
+    private var finalizedSegmentsCancellable: AnyCancellable?
+    private var transcriptCancellable: AnyCancellable?
+
     
     var elapsedTimeFormatted: String {
         let totalSeconds = Int(elapsed)
@@ -73,50 +89,140 @@ class AudioRecorder: ObservableObject {
             return
         }
 
-        // Defensive: don't proceed if not authorized
+        // Check permission
         let permission = AVAudioSession.sharedInstance().recordPermission
         guard permission == .granted else {
             micPermission = permission
-            print("Microphone permission not granted. Aborting startRecording().")
+            print("Microphone permission not granted")
             return
         }
 
+        // Configure audio session for voice recording
         let session = AVAudioSession.sharedInstance()
         do {
-            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            // Use .playAndRecord to support speaker output
+            // .spokenAudio mode optimizes for speech and provides better echo cancellation
+            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
+
+            // Set preferred input to built-in mic (bottom mic for better speech capture)
+            if let availableInputs = session.availableInputs,
+               let builtInMic = availableInputs.first(where: { $0.portType == .builtInMic }) {
+                try session.setPreferredInput(builtInMic)
+            }
+
+            // Optimize for speech - 16kHz is optimal for voice
+            try session.setPreferredSampleRate(16000)
+            try session.setPreferredIOBufferDuration(0.005) // 5ms for low latency
+
             try session.setActive(true)
+
+            print("✅ Audio session configured: mode=\(session.mode.rawValue), category=\(session.category.rawValue)")
+            print("✅ Current input: \(session.currentRoute.inputs.first?.portName ?? "unknown")")
         } catch {
             print("Failed to configure AVAudioSession: \(error)")
             return
         }
 
-        // Prepare file URL (.m4a AAC)
+        // Prepare file URL
         let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let filename = "recording_\(timestamp).m4a"
         let fileURL = getDocumentsDirectory().appendingPathComponent(filename)
         self.lastRecordingURL = fileURL
 
-        // High-quality AAC settings
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 44100.0,
-            AVNumberOfChannelsKey: 1, // iPhone mic is mono; use 2 if you have stereo input
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
-            AVEncoderBitRateKey: 192_000
-        ]
+        // Create audio engine
+        let engine = AVAudioEngine()
+        self.audioEngine = engine
+
+        let inputNode = engine.inputNode
+        let inputFormat = inputNode.outputFormat(forBus: 0)
+
+        // Create audio file for recording
+        let recordingFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 44100,
+            channels: 1,
+            interleaved: false
+        )!
 
         do {
-            audioRecorder = try AVAudioRecorder(url: fileURL, settings: settings)
-            audioRecorder?.isMeteringEnabled = true
-            audioRecorder?.prepareToRecord()
-            let started = audioRecorder?.record() ?? false
-            guard started else {
-                print("❌ Failed to start recording")
-                return
+            audioFile = try AVAudioFile(
+                forWriting: fileURL,
+                settings: [
+                    AVFormatIDKey: kAudioFormatMPEG4AAC,
+                    AVSampleRateKey: 44100.0,
+                    AVNumberOfChannelsKey: 1,
+                    AVEncoderBitRateKey: 192000
+                ]
+            )
+        } catch {
+            print("Failed to create audio file: \(error)")
+            return
+        }
+
+        // Install tap for recording AND transcription
+        // Note: converter and transcriptionFormat will be set after transcription starts
+        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
+            guard let self = self, let file = self.audioFile else { return }
+
+            // Write to file
+            do {
+                try file.write(from: buffer)
+            } catch {
+                print("Failed to write buffer: \(error)")
             }
+
+            // Convert and feed to transcription if format is ready
+            if let pcmBuffer = buffer as? AVAudioPCMBuffer,
+               let converter = self.audioConverter,
+               let transcriptionFormat = self.transcriptionFormat {
+
+                // Calculate output buffer size based on sample rate conversion ratio
+                let ratio = transcriptionFormat.sampleRate / pcmBuffer.format.sampleRate
+                let outputFrameCapacity = AVAudioFrameCount(Double(pcmBuffer.frameLength) * ratio)
+
+                guard let convertedBuffer = AVAudioPCMBuffer(
+                    pcmFormat: transcriptionFormat,
+                    frameCapacity: outputFrameCapacity
+                ) else { return }
+
+                var error: NSError?
+                let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
+                    outStatus.pointee = .haveData
+                    return pcmBuffer
+                }
+
+                converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
+
+                if error == nil {
+                    Task { @MainActor in
+                        self.transcriptionService?.feedAudioBuffer(convertedBuffer)
+                    }
+                }
+            }
+
+            // Calculate amplitude for waveform
+            let channelData = buffer.floatChannelData?[0]
+            let channelDataCount = Int(buffer.frameLength)
+            var sum: Float = 0
+            if let data = channelData {
+                for i in 0..<channelDataCount {
+                    sum += abs(data[i])
+                }
+            }
+            let avgPower = sum / Float(channelDataCount)
+            let amplitude = CGFloat(avgPower)
+
+            DispatchQueue.main.async {
+                self.amplitudes.append(amplitude)
+            }
+        }
+
+        // Start engine
+        do {
+            try engine.start()
             print("✅ Recording to: \(fileURL.path)")
         } catch {
-            print("❌ Failed to create AVAudioRecorder: \(error)")
+            print("Failed to start audio engine: \(error)")
             return
         }
 
@@ -126,11 +232,17 @@ class AudioRecorder: ObservableObject {
         self.pausedDuration = 0
         self.lastPauseTime = nil
         self.amplitudes = []
+        self.liveTranscript = ""
+        self.currentTranscript = ""
+        self.finalizedSegments = []
         self.isRecording = true
         self.isPaused = false
 
-        // Start metering/elapsed timer
-        startMeteringTimer()
+        // Start timer
+        startTimer()
+
+        // Start live transcription
+        startLiveTranscription()
     }
 
     func setNoiseReduction(enabled: Bool) {
@@ -140,26 +252,13 @@ class AudioRecorder: ObservableObject {
         print("Noise reduction \(enabled ? "enabled" : "disabled")")
     }
 
-    private func startMeteringTimer() {
+    private func startTimer() {
         recordingStartTime = recordingStartTime ?? Date()
 
-        // Update timer for elapsed time and amplitudes
         self.timer?.invalidate()
         self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
-
-            // Update elapsed time
             self.updateElapsedTime()
-
-            // Update metering-based amplitude
-            if let recorder = self.audioRecorder {
-                recorder.updateMeters()
-                let avgPower = recorder.averagePower(forChannel: 0) // -160 .. 0 dB
-                // Convert dB to linear 0...1
-                let linear = max(0.0, pow(10.0, avgPower / 20.0))
-                let amplitude = CGFloat(linear)
-                self.amplitudes.append(amplitude)
-            }
         }
     }
 
@@ -192,9 +291,14 @@ class AudioRecorder: ObservableObject {
     }
 
     func stopRecording() {
-        // Stop AVAudioRecorder
-        audioRecorder?.stop()
-        audioRecorder = nil
+        // Stop transcription
+        stopLiveTranscription()
+
+        // Stop audio engine
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine = nil
+        audioFile = nil
 
         // Stop timer
         timer?.invalidate()
@@ -217,7 +321,7 @@ class AudioRecorder: ObservableObject {
             return
         }
 
-        audioRecorder?.pause()
+        audioEngine?.pause()
         timer?.invalidate()
         timer = nil
         isPaused = true
@@ -236,10 +340,12 @@ class AudioRecorder: ObservableObject {
             return
         }
 
-        // Resume AVAudioRecorder
-        if audioRecorder?.record() == true {
-            // Restart the timer for elapsed time updates and metering
-            startMeteringTimer()
+        // Resume audio engine
+        do {
+            try audioEngine?.start()
+            startTimer()
+        } catch {
+            print("Failed to resume audio engine: \(error)")
         }
     }
     
@@ -264,6 +370,78 @@ class AudioRecorder: ObservableObject {
 
     func getDocumentsDirectory() -> URL {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    // MARK: - Live Transcription
+
+    @MainActor
+    private func startLiveTranscription() {
+        transcriptionService = TranscriptionService()
+
+        Task {
+            do {
+                guard await transcriptionService?.requestAuthorization() == true else {
+                    print("Speech recognition not authorized")
+                    return
+                }
+
+                // Start the transcription service and get optimal format
+                guard let optimalFormat = try await transcriptionService?.startStreamingTranscription() else {
+                    print("❌ Failed to get optimal audio format")
+                    return
+                }
+
+                // Now set up the converter with the correct format
+                guard let inputNode = audioEngine?.inputNode else {
+                    print("❌ No input node available")
+                    return
+                }
+
+                let inputFormat = inputNode.outputFormat(forBus: 0)
+                guard let converter = AVAudioConverter(from: inputFormat, to: optimalFormat) else {
+                    print("❌ Failed to create audio converter from \(inputFormat.sampleRate)Hz to \(optimalFormat.sampleRate)Hz")
+                    return
+                }
+
+                self.audioConverter = converter
+                self.transcriptionFormat = optimalFormat
+
+                print("✅ Live transcription started with SpeechAnalyzer")
+                print("✅ Audio converter ready: \(inputFormat.sampleRate)Hz → \(optimalFormat.sampleRate)Hz")
+
+                // Observe current (partial) transcript updates
+                currentTranscriptCancellable = transcriptionService?.$currentTranscript
+                    .receive(on: DispatchQueue.main)
+                    .assign(to: \.currentTranscript, on: self)
+
+                // Observe finalized segments (committed conversation pieces)
+                finalizedSegmentsCancellable = transcriptionService?.$finalizedSegments
+                    .receive(on: DispatchQueue.main)
+                    .assign(to: \.finalizedSegments, on: self)
+
+                // Keep legacy property for compatibility
+                transcriptCancellable = transcriptionService?.$liveTranscript
+                    .receive(on: DispatchQueue.main)
+                    .assign(to: \.liveTranscript, on: self)
+            } catch {
+                print("Failed to start live transcription: \(error)")
+            }
+        }
+    }
+
+    @MainActor
+    private func stopLiveTranscription() {
+        // Stop the transcription service (will finalize the analyzer)
+        transcriptionService?.stopTranscription()
+        transcriptionService = nil
+
+        // Cancel all observers
+        currentTranscriptCancellable?.cancel()
+        currentTranscriptCancellable = nil
+        finalizedSegmentsCancellable?.cancel()
+        finalizedSegmentsCancellable = nil
+        transcriptCancellable?.cancel()
+        transcriptCancellable = nil
     }
 }
 

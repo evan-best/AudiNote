@@ -21,12 +21,17 @@ struct RecordingDetailView: View {
     }
     
     var body: some View {
-        VStack(spacing: 12) {
-                Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
-                    .foregroundStyle(.secondary)
-                Text("Duration: \(recording.formattedDuration)")
-                    .foregroundStyle(.secondary)
-                
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header info
+                VStack(spacing: 8) {
+                    Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute())
+                        .foregroundStyle(.secondary)
+                    Text("Duration: \(recording.formattedDuration)")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top)
+
                 // Player UI
                 VStack(spacing: 12) {
                     HStack(spacing: 16) {
@@ -42,14 +47,17 @@ struct RecordingDetailView: View {
                             }
                         }) {
                             Image(systemName: audioPlayer.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                .font(.system(size: 36, weight: .regular))
+                                .font(.system(size: 48, weight: .regular))
                         }
-                        Text("\(formatTime(audioPlayer.currentTime)) / \(formatTime(audioPlayer.duration))")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
-                            .monospacedDigit()
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(formatTime(audioPlayer.currentTime)) / \(formatTime(audioPlayer.duration))")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+                        }
                     }
-                    
+
                     Slider(value: $audioPlayer.currentTime, in: 0...(audioPlayer.duration > 0 ? audioPlayer.duration : 1), onEditingChanged: { editing in
                         if !editing {
                             audioPlayer.seek(to: audioPlayer.currentTime)
@@ -57,8 +65,10 @@ struct RecordingDetailView: View {
                     })
                     .disabled(audioPlayer.duration == 0)
                 }
-                .padding(.vertical, 6)
-                
+                .padding()
+                .background(Color.secondary.opacity(0.1))
+                .cornerRadius(12)
+
                 if let loadError {
                     Text(loadError)
                         .font(.footnote)
@@ -70,12 +80,32 @@ struct RecordingDetailView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                
-                Spacer()
+
+                // Transcript section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Transcript")
+                            .font(.system(size: 20, weight: .semibold))
+                        Spacer()
+                    }
+
+                    if recording.isTranscribing {
+                        TranscriptionStatusView(isTranscribing: true, isTranscribed: false)
+                    } else if recording.isTranscribed {
+                        TranscriptView(segments: recording.decodedTranscriptSegments) { timestamp in
+                            audioPlayer.seek(to: timestamp)
+                            audioPlayer.play()
+                        }
+                    } else {
+                        TranscriptionStatusView(isTranscribing: false, isTranscribed: false)
+                    }
+                }
+                .padding(.top, 8)
             }
             .padding()
-			.navigationTitle(recording.title)
-            .navigationBarTitleDisplayMode(.inline)
+        }
+        .navigationTitle(recording.title)
+        .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
