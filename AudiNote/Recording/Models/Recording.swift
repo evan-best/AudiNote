@@ -9,27 +9,30 @@ import Foundation
 import SwiftData
 
 @Model
-final class Recording: Identifiable {
-    var id = UUID()
+final class Recording {
     var title: String = ""
     var timestamp: Date = Date()
     var duration: Double = 0.0
     var audioFilePath: String = ""
     var transcript: String?
+    var transcriptSegments: Data? // Store TranscriptSegment array as JSON
     var notes: String?
     var isTranscribed: Bool = false
+    var isTranscribing: Bool = false
     var isUploaded: Bool = false
     var isStarred: Bool = false
     var tags: [String] = []
-    
+
     init(
         title: String = "",
         timestamp: Date = Date(),
         duration: Double = 0.0,
         audioFilePath: String = "",
         transcript: String? = nil,
+        transcriptSegments: [TranscriptSegment]? = nil,
         notes: String? = nil,
         isTranscribed: Bool = false,
+        isTranscribing: Bool = false,
         isUploaded: Bool = false,
         isStarred: Bool = false,
         tags: [String] = []
@@ -41,9 +44,29 @@ final class Recording: Identifiable {
         self.transcript = transcript
         self.notes = notes
         self.isTranscribed = isTranscribed
+        self.isTranscribing = isTranscribing
         self.isUploaded = isUploaded
         self.isStarred = isStarred
         self.tags = tags
+
+        // Encode transcript segments to Data
+        if let segments = transcriptSegments {
+            self.transcriptSegments = try? JSONEncoder().encode(segments)
+        }
+    }
+
+    // Computed property to decode transcript segments
+    var decodedTranscriptSegments: [TranscriptSegment] {
+        guard let data = transcriptSegments else { return [] }
+        return (try? JSONDecoder().decode([TranscriptSegment].self, from: data)) ?? []
+    }
+
+    // Update transcript segments
+    func updateTranscriptSegments(_ segments: [TranscriptSegment]) {
+        self.transcriptSegments = try? JSONEncoder().encode(segments)
+        self.transcript = segments.map { $0.text }.joined(separator: " ")
+        self.isTranscribed = !segments.isEmpty
+        self.isTranscribing = false
     }
     
     // MARK: - Computed Helpers
@@ -100,5 +123,31 @@ final class Recording: Identifiable {
     /// Returns up to 2 tags for display in the list
     var displayTags: [String] {
         return Array(tags.prefix(2))
+    }
+
+    // MARK: - File Path Helpers
+
+    /// Get the full URL for the audio file, reconstructing from Documents directory
+    var audioFileURL: URL? {
+        // If path is empty, return nil
+        guard !audioFilePath.isEmpty else { return nil }
+
+        // If it's just a filename (no slashes), reconstruct full path
+        if !audioFilePath.contains("/") {
+            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            return documentsDir.appendingPathComponent(audioFilePath)
+        }
+
+        // If it's a full path, check if it exists
+        if FileManager.default.fileExists(atPath: audioFilePath) {
+            return URL(fileURLWithPath: audioFilePath)
+        }
+
+        // If full path doesn't exist, try extracting filename and reconstructing
+        let filename = (audioFilePath as NSString).lastPathComponent
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let reconstructedURL = documentsDir.appendingPathComponent(filename)
+
+        return FileManager.default.fileExists(atPath: reconstructedURL.path) ? reconstructedURL : nil
     }
 }

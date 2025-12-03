@@ -17,31 +17,54 @@ struct AudiNoteApp: App {
     // Ensure the iCloud capability is enabled and the container "iCloud.AudiNote" is checked for this target.
     private static var cloudContainer: ModelContainer = {
         let schema = Schema([Recording.self])
-        // CloudKit-backed configuration
-        let config = ModelConfiguration(
-            "iCloud.AudiNote",
-            cloudKitDatabase: .automatic // Uses the private database by default
-        )
+
+        // Use a versioned database name to allow fresh starts when schema changes
+        let dbName = "AudiNote_v3"
+
+        // First, try simple local storage (most reliable for development)
         do {
-            return try ModelContainer(for: schema, configurations: [config])
+            let localConfig = ModelConfiguration(
+                dbName,
+                schema: schema,
+                isStoredInMemoryOnly: false,
+                allowsSave: true
+            )
+            let container = try ModelContainer(for: schema, configurations: [localConfig])
+            print("✅ Successfully created local ModelContainer with database: \(dbName)")
+            return container
         } catch {
-            // Fallback: If CloudKit container cannot be created (e.g., in Previews), fall back to local
-            assertionFailure("Failed to create CloudKit-backed ModelContainer: \(error)")
-            return try! ModelContainer(for: schema)
+            print("⚠️ Failed to create local ModelContainer: \(error)")
+            print("⚠️ Error details: \(error.localizedDescription)")
+
+            // If local storage fails, use in-memory as absolute fallback
+            do {
+                let memoryConfig = ModelConfiguration(
+                    schema: schema,
+                    isStoredInMemoryOnly: true
+                )
+                let container = try ModelContainer(for: schema, configurations: [memoryConfig])
+                print("⚠️ Using in-memory storage (data will not persist)")
+                return container
+            } catch {
+                fatalError("❌ Cannot create ModelContainer even with in-memory storage: \(error)")
+            }
         }
     }()
     
     var body: some Scene {
         WindowGroup {
-            if session.isAuthenticated {
-                MainTabView()
-                    .environmentObject(session)
-                    .preferredColorScheme(session.colorScheme)
-            } else {
-                OnboardingView()
-                    .environmentObject(session)
-                    .preferredColorScheme(session.colorScheme)
+            ZStack {
+                if session.isAuthenticated {
+                    MainTabView()
+                        .environmentObject(session)
+                        .preferredColorScheme(session.colorScheme)
+                } else {
+                    OnboardingView()
+                        .environmentObject(session)
+                        .preferredColorScheme(session.colorScheme)
+                }
             }
+            .toast()
         }
         .modelContainer(Self.cloudContainer)
     }

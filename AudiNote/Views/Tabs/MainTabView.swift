@@ -17,34 +17,26 @@ struct MainTabView: View {
 	@Environment(\.modelContext) private var modelContext
 	@State private var selection: Tabs = .recordings
 	@State private var showSheet: Bool = false
+	@State private var navigationPath = NavigationPath()
 	@Namespace private var animation
-	@StateObject private var recorder = AudioRecorder() // Single shared recorder
+	@StateObject private var recorder = AudioRecorder()
 	@State private var detent: PresentationDetent = .fraction(0.25)
-	
-	private let sampleAmplitudes: [CGFloat] = (0..<50).map { i in
-		let value = CGFloat(abs(sin(Double(i) * 0.3))) * 0.9 + 0.1
-		return value
-	}
-	
+
 	var body: some View {
 		ZStack(alignment: .bottom) {
-			RecordingsView()
-			
+			RecordingsView(navigationPath: $navigationPath)
+
 			RecordButton(
 				recorder: recorder,
 				onRecordTapped: {
 					showSheet = true
-				},
-				onSave: { recording in
-					print("MainTabView: onSave called with recording: \(recording.id.uuidString)")
 				}
 			)
 			.matchedTransitionSource(id: "Record", in: animation)
 		}
 		.sheet(isPresented: $showSheet) {
-			// Use the same shared recorder instance
 			RecordingSheet(recorder: recorder, presentationDetent: detent) { recording in
-				print("MainTabView: RecordingSheet onSave called with recording: \(recording.id.uuidString)")
+				navigationPath.append(recording)
 			}
 			.environment(\.modelContext, modelContext)
 			.navigationTransition(.zoom(sourceID: "Record", in: animation))
@@ -58,4 +50,5 @@ struct MainTabView: View {
 #Preview {
     MainTabView()
         .modelContainer(for: Recording.self, inMemory: true)
+		.environmentObject(SessionViewModel())
 }

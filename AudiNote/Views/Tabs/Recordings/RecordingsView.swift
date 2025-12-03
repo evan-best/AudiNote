@@ -1,7 +1,5 @@
 import SwiftUI
 import SwiftData
-import Combine
-internal import CoreData
 
 enum RecordingSortOption: String, CaseIterable, Identifiable {
     case date = "Date"
@@ -10,25 +8,21 @@ enum RecordingSortOption: String, CaseIterable, Identifiable {
 }
 
 struct RecordingsView: View {
-    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var session: SessionViewModel
-    
-    @State private var recordings: [Recording] = []
-    @State private var selected: Recording?
+
+    @Query(sort: \Recording.timestamp, order: .reverse) private var recordings: [Recording]
+    @Binding var navigationPath: NavigationPath
+
     @State private var showSettings = false
-    @State private var selectedRecording: Recording?
     @State private var showSortSheet = false
-    
     @State private var selectedSort: RecordingSortOption = .date
     @State private var ascending: Bool = false
     @State private var showDeleteAlert = false
     @State private var recordingsToDelete: [Recording] = []
-    
-    @Namespace private var animation
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             recordingsList
                 .navigationTitle("Recordings")
                 .navigationBarTitleDisplayMode(.large)
@@ -37,6 +31,7 @@ struct RecordingsView: View {
                     RecordingDetailView(recording: recording)
                 }
                 .toolbar {
+                Group {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button {
                         session.triggerHaptic(style: .light)
@@ -59,6 +54,7 @@ struct RecordingsView: View {
                             session.triggerHaptic(style: .light)
                         }
                 }
+                }
             }
             .sheet(isPresented: $showSortSheet) {
                 SortSheetView(
@@ -70,23 +66,6 @@ struct RecordingsView: View {
                 SettingsView()
             }
         }
-                .onAppear {
-                    print("RecordingsView onAppear. modelContext: \(String(describing: modelContext))")
-                    fetchRecordings()
-                    debugRecordings()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: .NSManagedObjectContextDidSave)) { _ in
-                    print("Core Data context did save notification received - fetching recordings")
-                    fetchRecordings()
-                    debugRecordings()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("RecordingSaved"))) { _ in
-                    print("Recording saved notification received - refreshing list")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        fetchRecordings()
-                        debugRecordings()
-                    }
-                }
     }
 
     private var sortedRecordings: [Recording] {
@@ -144,66 +123,28 @@ struct RecordingsView: View {
         }
     }
 
-    private func addItem() {
-        withAnimation(.easeInOut(duration: 0.3)) {
-            let item = Recording(title: "New Recording",
-                                 timestamp: Date(),
-                                 duration: 0,
-                                 audioFilePath: "")
-            modelContext.insert(item)
-            do {
-                try modelContext.save()
-            } catch {
-                print("Failed saving after addItem(): \(error)")
-            }
-            selected = item
-        }
-    }
-
     private func confirmDelete(at offsets: IndexSet) {
         recordingsToDelete = offsets.map { displayRecordings[$0] }
         showDeleteAlert = true
     }
     
     private func deleteRecordings() {
+        let count = recordingsToDelete.count
         withAnimation {
             recordingsToDelete.forEach(modelContext.delete)
             do {
                 try modelContext.save()
-                print("Successfully deleted \(recordingsToDelete.count) recording(s)")
+                // Show deletion toast
+                ToastManager.shared.show(
+                    type: .delete,
+                    message: count == 1 ? "Recording deleted" : "\(count) recordings deleted"
+                )
             } catch {
-                print("Failed saving after delete: \(error)")
+                print("Failed to delete: \(error)")
+                // Show error toast
+                ToastManager.shared.show(type: .error, message: "Failed to delete recording")
             }
             recordingsToDelete = []
-        }
-    }
-    
-    private func fetchRecordings() {
-        do {
-            let fetchDescriptor = FetchDescriptor<Recording>(sortBy: [SortDescriptor(\.timestamp, order: .reverse)])
-            let fetchedRecordings = try modelContext.fetch(fetchDescriptor)
-            print("Fetched \(fetchedRecordings.count) recordings from database")
-            recordings = fetchedRecordings
-        } catch {
-            print("Failed to fetch recordings: \(error)")
-        }
-    }
-    
-    private func debugRecordings() {
-        print("RecordingsView: Debug - Total recordings in state: \(recordings.count)")
-        for recording in recordings {
-            print("  - ID: \(recording.id), Title: \(recording.title), Duration: \(recording.duration), Path: \(recording.audioFilePath)")
-        }
-    }
-    
-}
-
-private struct ContentPlaceholderView: View {
-    let text: String
-    var body: some View {
-        ZStack {
-            Color(.systemBackground).ignoresSafeArea()
-            Text(text).foregroundStyle(.secondary)
         }
     }
 }
@@ -289,5 +230,6 @@ private struct SortSheetView: View {
 }
 
 #Preview {
-	RecordingsView()
+    RecordingsView(navigationPath: .constant(NavigationPath()))
+		.environmentObject(SessionViewModel())
 }
