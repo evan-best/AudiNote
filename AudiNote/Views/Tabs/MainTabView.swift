@@ -50,4 +50,5 @@ struct MainTabView: View {
 #Preview {
     MainTabView()
         .modelContainer(for: Recording.self, inMemory: true)
+		.environmentObject(SessionViewModel())
 }

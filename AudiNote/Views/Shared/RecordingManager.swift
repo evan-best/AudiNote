@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Combine
+import SwiftUI
 
 /// A single facade that centralizes all recording-related actions.
 /// It composes `AudioRecorder` for capture and `ModelContext` for persistence.
@@ -37,28 +38,43 @@ final class RecordingManager: ObservableObject {
         recorder.stopRecording()
     }
 
-    func setNoiseReduction(enabled: Bool) {
-        recorder.setNoiseReduction(enabled: enabled)
-    }
-
     // MARK: - Persistence
     @MainActor
-    func saveRecording(title: String, transcript: String?) throws -> Recording {
+    func saveRecording(title: String) throws -> Recording {
         recorder.stopRecording()
 
+        // Ensure we have a valid recording URL
+        guard let recordingURL = recorder.getLastRecordingURL() else {
+            throw NSError(domain: "RecordingManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "No recording URL available"])
+        }
+
+        // Save ONLY the filename (not full path) for persistence across app launches
+        let filename = recordingURL.lastPathComponent
+        let hasTranscript = !recorder.finalizedSegments.isEmpty
         let newRecording = Recording(
             title: title,
             timestamp: Date(),
             duration: recorder.elapsed,
-            audioFilePath: recorder.getLastRecordingURL()?.path ?? ""
+            audioFilePath: filename, // Store only filename, not full path
+            transcriptSegments: hasTranscript ? recorder.finalizedSegments : nil,
+            isTranscribed: hasTranscript
         )
 
         modelContext.insert(newRecording)
         try modelContext.save()
 
-        // Start transcription in background
-        Task {
-            await transcribeRecording(newRecording)
+        print("✅ Saved recording filename: \(filename)")
+        print("✅ Full path: \(recordingURL.path)")
+        print("✅ File exists: \(FileManager.default.fileExists(atPath: recordingURL.path))")
+
+        // Show success toast
+        ToastManager.shared.show(type: .success, message: "Recording saved")
+
+        // Start transcription in background if not already captured
+        if recorder.finalizedSegments.isEmpty {
+            Task {
+                await transcribeRecording(newRecording)
+            }
         }
 
         return newRecording
@@ -74,11 +90,15 @@ final class RecordingManager: ObservableObject {
             return
         }
 
-        // Get audio file URL
-        guard let audioURL = URL(string: "file://" + recording.audioFilePath) else {
-            print("Invalid audio file path")
+        // Get audio file URL using the helper that reconstructs the path
+        guard let audioURL = recording.audioFileURL else {
+            print("❌ Audio file not found. Filename: \(recording.audioFilePath)")
+            recording.isTranscribing = false
+            try? modelContext.save()
             return
         }
+
+        print("🎤 Starting transcription for: \(audioURL.path)")
 
         // Mark as transcribing
         recording.isTranscribing = true
@@ -105,5 +125,8 @@ final class RecordingManager: ObservableObject {
     func deleteRecording(_ recording: Recording) throws {
         modelContext.delete(recording)
         try modelContext.save()
+
+        // Show deletion toast
+        ToastManager.shared.show(type: .delete, message: "Recording deleted")
     }
 }

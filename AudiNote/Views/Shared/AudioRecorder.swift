@@ -14,15 +14,11 @@ class AudioRecorder: ObservableObject {
     @Published var currentTranscript: String = ""
     @Published var finalizedSegments: [TranscriptSegment] = []
 
-    // Legacy property for compatibility
-    @Published var liveTranscript: String = ""
-
     private var timer: Timer?
     private(set) var lastRecordingURL: URL?
     private var recordingStartTime: Date?
     private var pausedDuration: TimeInterval = 0
     private var lastPauseTime: Date?
-    private var noiseReductionEnabled: Bool = false
     public private(set) var isPreviewMode: Bool = false
 
     // AVAudioEngine for unified recording + transcription
@@ -33,7 +29,6 @@ class AudioRecorder: ObservableObject {
     private var transcriptionFormat: AVAudioFormat?
     private var currentTranscriptCancellable: AnyCancellable?
     private var finalizedSegmentsCancellable: AnyCancellable?
-    private var transcriptCancellable: AnyCancellable?
 
     
     var elapsedTimeFormatted: String {
@@ -232,7 +227,6 @@ class AudioRecorder: ObservableObject {
         self.pausedDuration = 0
         self.lastPauseTime = nil
         self.amplitudes = []
-        self.liveTranscript = ""
         self.currentTranscript = ""
         self.finalizedSegments = []
         self.isRecording = true
@@ -243,13 +237,6 @@ class AudioRecorder: ObservableObject {
 
         // Start live transcription
         startLiveTranscription()
-    }
-
-    func setNoiseReduction(enabled: Bool) {
-        noiseReductionEnabled = enabled
-        // Apply noise reduction to the audio processing chain
-        // This could involve adding/removing audio unit effects
-        print("Noise reduction \(enabled ? "enabled" : "disabled")")
     }
 
     private func startTimer() {
@@ -418,11 +405,6 @@ class AudioRecorder: ObservableObject {
                 finalizedSegmentsCancellable = transcriptionService?.$finalizedSegments
                     .receive(on: DispatchQueue.main)
                     .assign(to: \.finalizedSegments, on: self)
-
-                // Keep legacy property for compatibility
-                transcriptCancellable = transcriptionService?.$liveTranscript
-                    .receive(on: DispatchQueue.main)
-                    .assign(to: \.liveTranscript, on: self)
             } catch {
                 print("Failed to start live transcription: \(error)")
             }
@@ -440,8 +422,6 @@ class AudioRecorder: ObservableObject {
         currentTranscriptCancellable = nil
         finalizedSegmentsCancellable?.cancel()
         finalizedSegmentsCancellable = nil
-        transcriptCancellable?.cancel()
-        transcriptCancellable = nil
     }
 }
 

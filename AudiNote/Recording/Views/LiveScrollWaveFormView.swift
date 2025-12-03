@@ -16,13 +16,12 @@ struct LiveScrollWaveformView: View {
     @State private var recordingTitle = "New Recording"
     @State private var isEditingTitle = false
     @FocusState private var isTitleFocused: Bool
-    @State private var isNoiseReductionEnabled = false
     @EnvironmentObject private var session: SessionViewModel
     let isLargeMode: Bool
     var onCancel: (() -> Void)?
-    var onDone: ((String, String) -> Void)?
-    
-    init(recorder: AudioRecorder, isLargeMode: Bool = false, onCancel: (() -> Void)? = nil, onDone: ((String, String) -> Void)? = nil) {
+    var onDone: ((String) -> Void)?
+
+    init(recorder: AudioRecorder, isLargeMode: Bool = false, onCancel: (() -> Void)? = nil, onDone: ((String) -> Void)? = nil) {
         self._recorder = ObservedObject(initialValue: recorder)
         self.isLargeMode = isLargeMode
         self.onCancel = onCancel
@@ -176,7 +175,7 @@ struct LiveScrollWaveformView: View {
                     session.triggerHaptic(style: .heavy)
 
                     recorder.stopRecording()
-                    onDone?(recordingTitle, "")
+                    onDone?(recordingTitle)
                 }) {
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark")
@@ -233,119 +232,6 @@ struct ProminentTranslucentButtonStyle: ButtonStyle {
     }
 }
 
-class WaveformRenderer: ObservableObject {
-    @Published private(set) var shouldUpdate: Bool = false
-    
-    private var displayLink: CADisplayLink?
-    private var isPaused = false
-    private var amplitudes: [CGFloat] = []
-    private var lastSize: CGSize = .zero
-    
-    // Pre-allocate arrays to avoid allocation overhead
-    private var cachedBars: [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] = Array(repeating: (x: 0, y: 0, width: 2, height: 2), count: 200) // Fixed size for any screen
-    private var barCount: Int = 0
-    private let barWidth: CGFloat = 2
-    private let barSpacing: CGFloat = 4
-    private lazy var step: CGFloat = barWidth + barSpacing
-    
-    // Cached layout values to avoid recalculation
-    private var centerStartX: CGFloat = 0
-    private var midY: CGFloat = 0
-    private let maxBarHeight: CGFloat = 20
-    private let minBarHeight: CGFloat = 2
-    
-    // Ultra-simple scrolling
-    private var scrollPosition: Double = 0  // Continuous scroll position
-    
-    
-    func start(amplitudes: [CGFloat]) {
-        updateAmplitudes(amplitudes)
-        
-        // Only start display link if not already running
-        if displayLink == nil {
-            displayLink = CADisplayLink(target: self, selector: #selector(frame))
-            displayLink?.preferredFramesPerSecond = 120  // Keep smooth 120fps
-            displayLink?.add(to: .current, forMode: .common)
-        }
-    }
-    
-    func updateAmplitudes(_ amplitudes: [CGFloat]) {
-        // Just use the amplitudes as provided - no internal truncation
-        self.amplitudes = amplitudes
-    }
-    
-    func stop() {
-        displayLink?.invalidate()
-        displayLink = nil
-    }
-    
-    func setPaused(_ paused: Bool) {
-        isPaused = paused
-    }
-    
-    func updateSize(_ size: CGSize) {
-        guard size != lastSize else { return }
-        lastSize = size
-        
-        // Recalculate layout values when size changes
-        let newBarCount = max(1, Int((size.width + barSpacing) / step))
-        let totalBarWidth = CGFloat(newBarCount) * barWidth + CGFloat(newBarCount - 1) * barSpacing
-        centerStartX = (size.width - totalBarWidth) / 2
-        midY = size.height / 2
-        
-        // Just update barCount - array is pre-allocated
-        barCount = min(newBarCount, 200) // Cap at pre-allocated size
-    }
-    
-    @objc private func frame() {
-        guard lastSize != .zero, barCount > 0 else { return }
-        
-        // Ultra-simple constant increment
-        if !isPaused {
-            scrollPosition += 0.25  // 0.125 * 120fps = 15 per second
-        }
-        
-        // Update cached bars in-place - no allocations
-        let fractionalPart = scrollPosition - floor(scrollPosition)
-        let pixelOffset = CGFloat(fractionalPart) * step
-        
-        for i in 0..<barCount {
-            let baseIndex = Int(scrollPosition) - (barCount - 1 - i)
-            
-            // Mock data: generate different bar heights based on position
-            let mockAmplitude: CGFloat
-            if baseIndex < 0 {
-                mockAmplitude = 0.02  // Empty bars before start
-            } else {
-                // Create interesting pattern: sine wave + random variation
-                let phase = Double(baseIndex) * 0.3
-                let sineWave = sin(phase)
-                let randomVariation = sin(Double(baseIndex) * 1.7) * 0.3
-                mockAmplitude = CGFloat(abs(sineWave + randomVariation) * 0.8 + 0.2)
-            }
-            
-            let normalizedAmplitude = min(1.0, mockAmplitude * 1.5)
-            let barHeight = minBarHeight + (maxBarHeight - minBarHeight) * normalizedAmplitude
-            
-            let x = centerStartX + CGFloat(i) * step - pixelOffset
-            let y = midY - barHeight
-            
-            cachedBars[i] = (x: x, y: y, width: barWidth, height: barHeight * 2)
-        }
-        
-        // Trigger minimal UI update
-        shouldUpdate.toggle()
-    }
-    
-    func getBars() -> [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] {
-        return cachedBars
-    }
-    
-    deinit {
-        stop()
-    }
-}
-
 struct WaveformView: View {
     let amplitudes: [CGFloat]
     let color: Color
@@ -392,7 +278,7 @@ struct WaveformView: View {
                     amplitude = 0.02  // Default for out of bounds
                 }
                 
-                let normalizedAmplitude = min(1.0, amplitude * 1.5)
+                let normalizedAmplitude = min(1.0, amplitude * 2.5)
                 let barHeight = minBarHeight + (maxBarHeight - minBarHeight) * normalizedAmplitude
                 
                 let x = centerStartX + CGFloat(i) * step - pixelOffset
@@ -617,9 +503,9 @@ struct TranscriptionStackView: View {
 					}
 					
 					if isStreaming {
-						// Streaming text - no animation, just show it
+						// Streaming animation
 						Text(text)
-							.font(.system(size: 18))
+							.font(.system(size: 16))
 							.foregroundColor(.secondary)
 							.multilineTextAlignment(alignment == .leading ? .leading : .trailing)
 							.fixedSize(horizontal: false, vertical: true)
@@ -638,7 +524,7 @@ struct TranscriptionStackView: View {
 								
 								// Smooth animation over text length
 								let totalDuration = Double(text.count) * 0.015 + 0.2
-								let steps = 60 // 60 fps
+								let steps = 120 // 60 fps
 								let increment = totalDuration / Double(steps)
 								
 								for _ in 0..<steps {
@@ -768,7 +654,7 @@ struct TranscriptionStackView: View {
 				onCancel: {
 					// Handle cancel
 				},
-				onDone: { title, transcript in
+				onDone: { title in
 					print("Done with title: \(title)")
 				}
 			)

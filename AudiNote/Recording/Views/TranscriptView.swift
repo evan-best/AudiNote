@@ -17,16 +17,22 @@ struct TranscriptView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                ForEach(segments) { segment in
-                    TranscriptSegmentRow(
-                        segment: segment,
-                        onTimestampTap: onTimestampTap
-                    )
+        GeometryReader { geometry in
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    ForEach(segments) { segment in
+                        TranscriptSegmentRow(
+                            segment: segment,
+                            onTimestampTap: onTimestampTap
+                        )
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+                .padding(.top, 20)
+                .padding(.bottom, 80)
             }
-            .padding()
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
     }
 }
@@ -34,32 +40,42 @@ struct TranscriptView: View {
 struct TranscriptSegmentRow: View {
     let segment: TranscriptSegment
     let onTimestampTap: ((TimeInterval) -> Void)?
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            // Timestamp button
-            Button {
-                onTimestampTap?(segment.timestamp)
-            } label: {
-                Text(segment.formattedTimestamp)
-                    .font(.system(size: 13, weight: .medium, design: .monospaced))
-                    .foregroundColor(.blue)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(Color.blue.opacity(0.1))
-                    )
+        VStack(alignment: .leading, spacing: 4) {
+            // Timestamp
+            HStack {
+                if let onTap = onTimestampTap {
+                    Button {
+                        onTap(segment.timestamp)
+                    } label: {
+                        Text(segment.formattedTimestamp)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(segment.formattedTimestamp)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary.opacity(0.6))
+                }
+
+                Spacer()
             }
-            .buttonStyle(.plain)
 
             // Transcript text
-            Text(segment.text)
-                .font(.system(size: 16))
-                .foregroundColor(.primary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text(segment.text)
+                    .font(.system(size: 24))
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer()
+            }
         }
+        .frame(maxWidth: .infinity)
     }
 }
 

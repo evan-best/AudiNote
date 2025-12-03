@@ -129,12 +129,20 @@ struct RecordingsView: View {
     }
     
     private func deleteRecordings() {
+        let count = recordingsToDelete.count
         withAnimation {
             recordingsToDelete.forEach(modelContext.delete)
             do {
                 try modelContext.save()
+                // Show deletion toast
+                ToastManager.shared.show(
+                    type: .delete,
+                    message: count == 1 ? "Recording deleted" : "\(count) recordings deleted"
+                )
             } catch {
                 print("Failed to delete: \(error)")
+                // Show error toast
+                ToastManager.shared.show(type: .error, message: "Failed to delete recording")
             }
             recordingsToDelete = []
         }
@@ -223,4 +231,5 @@ private struct SortSheetView: View {
 
 #Preview {
     RecordingsView(navigationPath: .constant(NavigationPath()))
+		.environmentObject(SessionViewModel())
 }

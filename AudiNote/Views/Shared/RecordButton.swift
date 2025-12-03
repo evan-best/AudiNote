@@ -20,14 +20,6 @@ struct RecordButton: View {
     // Permission alert state
     @State private var showMicAlert = false
 
-    // Sample waveform data
-    private let sampleAmplitudes: [CGFloat] = {
-        (0..<50).map { i in
-            let value = CGFloat(abs(sin(Double(i) * 0.3))) * 0.9 + 0.1
-            return value
-        }
-    }()
-    
     init(recorder: AudioRecorder, onRecordTapped: (() -> Void)? = nil, onSave: ((Recording) -> Void)? = nil) {
         self.recorder = recorder
         self.onRecordTapped = onRecordTapped
@@ -125,39 +117,6 @@ struct RecordButton: View {
     // MARK: - Actions
     private func startRecording() {
         recorder.startRecording()
-    }
-    
-    private func cancelRecording() {
-        recorder.stopRecording()
-    }
-    
-    private func saveRecording() {
-        let recordingDuration = recorder.elapsed
-        let lastRecordingURL = recorder.getLastRecordingURL()
-        
-        // Create the recording object
-        let newRecording = Recording(
-            title: "New Recording",
-            timestamp: Date(),
-            duration: recordingDuration,
-            audioFilePath: lastRecordingURL?.path ?? ""
-        )
-        
-        // Stop recording
-        recorder.stopRecording()
-        
-        // Insert and save to database
-        modelContext.insert(newRecording)
-        
-        do {
-            try modelContext.save()
-            print("Successfully saved recording to database")
-        } catch {
-            print("Failed to save recording: \(error)")
-        }
-        
-        // Call the callback if provided
-        onSave?(newRecording)
     }
 }
 

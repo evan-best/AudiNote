@@ -43,10 +43,6 @@ class TranscriptionService: ObservableObject {
     // Finalized conversation pieces (committed after pauses in speech)
     @Published var finalizedSegments: [TranscriptSegment] = []
 
-    // Legacy property for compatibility
-    @Published var liveTranscript: String = ""
-    @Published var liveSegments: [TranscriptSegment] = []
-
     private var speechAnalyzer: SpeechAnalyzer?
     private var transcriber: SpeechTranscriber?
     private var transcriptionStartTime: Date?
@@ -100,8 +96,6 @@ class TranscriptionService: ObservableObject {
         // Reset state
         currentTranscript = ""
         finalizedSegments = []
-        liveTranscript = ""
-        liveSegments = []
         lastFinalizedText = ""
         isTranscribing = true
         transcriptionStartTime = Date()
@@ -208,12 +202,6 @@ class TranscriptionService: ObservableObject {
 
                         self.finalizedSegments.append(segment)
 
-                        // Update legacy full transcript
-                        if !self.liveTranscript.isEmpty {
-                            self.liveTranscript += " "
-                        }
-                        self.liveTranscript += plainText
-
                         // Clear current transcript since it's finalized
                         self.currentTranscript = ""
 
@@ -223,9 +211,6 @@ class TranscriptionService: ObservableObject {
                         self.currentTranscript = String(response.text.characters)
                         print("⏳ Partial: '\(self.currentTranscript)'")
                     }
-
-                    // Update legacy segments
-                    self.liveSegments = self.finalizedSegments
                 }
                 print("🛑 Transcription results stream ended")
             } catch {

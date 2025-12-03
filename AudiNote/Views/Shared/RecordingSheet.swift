@@ -46,8 +46,8 @@ struct RecordingSheet: View {
                         onCancel: {
                             dismiss()
                         },
-                        onDone: { title, transcript in
-                            saveRecording(title: title, transcript: transcript)
+                        onDone: { title in
+                            saveRecording(title: title)
                         }
                     )
                 }
@@ -61,13 +61,13 @@ struct RecordingSheet: View {
         }
     }
 
-    private func saveRecording(title: String = "New Recording", transcript: String? = nil) {
+    private func saveRecording(title: String = "New Recording") {
         guard !isSaving, let manager else { return }
         isSaving = true
 
         Task { @MainActor in
             do {
-                let recording = try manager.saveRecording(title: title, transcript: transcript)
+                let recording = try manager.saveRecording(title: title)
                 dismiss()
                 onSave(recording)
             } catch {

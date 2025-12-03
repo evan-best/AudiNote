@@ -53,15 +53,18 @@ struct AudiNoteApp: App {
     
     var body: some Scene {
         WindowGroup {
-            if session.isAuthenticated {
-                MainTabView()
-                    .environmentObject(session)
-                    .preferredColorScheme(session.colorScheme)
-            } else {
-                OnboardingView()
-                    .environmentObject(session)
-                    .preferredColorScheme(session.colorScheme)
+            ZStack {
+                if session.isAuthenticated {
+                    MainTabView()
+                        .environmentObject(session)
+                        .preferredColorScheme(session.colorScheme)
+                } else {
+                    OnboardingView()
+                        .environmentObject(session)
+                        .preferredColorScheme(session.colorScheme)
+                }
             }
+            .toast()
         }
         .modelContainer(Self.cloudContainer)
     }

@@ -42,7 +42,7 @@ final class DisplayLinkDriver {
             if #available(iOS 15.0, *) {
                 // Runtime-safe path
                 dl.preferredFrameRateRange = CAFrameRateRange(
-                    minimum: Float(Float64(min(80, targetFPS))),   // >60 smoothness on ProMotion
+                    minimum: Float(Float64(min(60, targetFPS))),   // >60 smoothness on ProMotion
                     maximum: Float(Float64(targetFPS)),
                     preferred: Float(Float64(targetFPS))
                 )
