@@ -27,6 +27,7 @@ class AudioRecorder: ObservableObject {
     private var transcriptionService: TranscriptionService?
     private var audioConverter: AVAudioConverter?
     private var transcriptionFormat: AVAudioFormat?
+    private var recordingConverter: AVAudioConverter?
     private var currentTranscriptCancellable: AnyCancellable?
     private var finalizedSegmentsCancellable: AnyCancellable?
 
@@ -118,9 +119,9 @@ class AudioRecorder: ObservableObject {
             return
         }
 
-        // Prepare file URL
+        // Prepare file URL - use .caf for reliable recording
         let timestamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let filename = "recording_\(timestamp).m4a"
+        let filename = "recording_\(timestamp).caf"
         let fileURL = getDocumentsDirectory().appendingPathComponent(filename)
         self.lastRecordingURL = fileURL
 
@@ -131,10 +132,11 @@ class AudioRecorder: ObservableObject {
         let inputNode = engine.inputNode
         let inputFormat = inputNode.outputFormat(forBus: 0)
 
-        // Create audio file for recording
+        // Create high-quality CAF file with LPCM format
+        // CAF container with PCM is lossless and works reliably with AVAudioFile
         let recordingFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
-            sampleRate: 44100,
+            sampleRate: 48000,
             channels: 1,
             interleaved: false
         )!
@@ -142,28 +144,38 @@ class AudioRecorder: ObservableObject {
         do {
             audioFile = try AVAudioFile(
                 forWriting: fileURL,
-                settings: [
-                    AVFormatIDKey: kAudioFormatMPEG4AAC,
-                    AVSampleRateKey: 44100.0,
-                    AVNumberOfChannelsKey: 1,
-                    AVEncoderBitRateKey: 192000
-                ]
+                settings: recordingFormat.settings,
+                commonFormat: .pcmFormatFloat32,
+                interleaved: false
             )
         } catch {
-            print("Failed to create audio file: \(error)")
+            return
+        }
+
+        // Create converter from input to recording format
+        recordingConverter = AVAudioConverter(from: inputFormat, to: recordingFormat)
+        guard recordingConverter != nil else {
             return
         }
 
         // Install tap for recording AND transcription
-        // Note: converter and transcriptionFormat will be set after transcription starts
         inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
-            guard let self = self, let file = self.audioFile else { return }
+            guard let self = self, let file = self.audioFile, let converter = self.recordingConverter else { return }
 
-            // Write to file
-            do {
-                try file.write(from: buffer)
-            } catch {
-                print("Failed to write buffer: \(error)")
+            // Convert input buffer to recording format
+            guard let pcmBuffer = buffer as? AVAudioPCMBuffer else { return }
+
+            let frameCapacity = AVAudioFrameCount(recordingFormat.sampleRate * Double(pcmBuffer.frameLength) / inputFormat.sampleRate)
+            guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: recordingFormat, frameCapacity: frameCapacity) else { return }
+
+            var error: NSError?
+            converter.convert(to: convertedBuffer, error: &error) { _, outStatus in
+                outStatus.pointee = .haveData
+                return pcmBuffer
+            }
+
+            if error == nil {
+                try? file.write(from: convertedBuffer)
             }
 
             // Convert and feed to transcription if format is ready
@@ -281,13 +293,14 @@ class AudioRecorder: ObservableObject {
         // Stop transcription
         stopLiveTranscription()
 
-        // Stop audio engine
+        // Stop audio engine and remove tap BEFORE closing file
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
-        audioEngine = nil
-        audioFile = nil
 
-        // Stop timer
+        audioFile = nil
+        audioEngine = nil
+        recordingConverter = nil
+
         timer?.invalidate()
         timer = nil
 
@@ -295,7 +308,7 @@ class AudioRecorder: ObservableObject {
         isPaused = false
 
         let session = AVAudioSession.sharedInstance()
-        try? session.setActive(false)
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
     }
     
     func pauseRecording() {
@@ -368,33 +381,26 @@ class AudioRecorder: ObservableObject {
         Task {
             do {
                 guard await transcriptionService?.requestAuthorization() == true else {
-                    print("Speech recognition not authorized")
-                    return
+                        return
                 }
 
                 // Start the transcription service and get optimal format
                 guard let optimalFormat = try await transcriptionService?.startStreamingTranscription() else {
-                    print("❌ Failed to get optimal audio format")
                     return
                 }
 
                 // Now set up the converter with the correct format
                 guard let inputNode = audioEngine?.inputNode else {
-                    print("❌ No input node available")
                     return
                 }
 
                 let inputFormat = inputNode.outputFormat(forBus: 0)
                 guard let converter = AVAudioConverter(from: inputFormat, to: optimalFormat) else {
-                    print("❌ Failed to create audio converter from \(inputFormat.sampleRate)Hz to \(optimalFormat.sampleRate)Hz")
                     return
                 }
 
                 self.audioConverter = converter
                 self.transcriptionFormat = optimalFormat
-
-                print("✅ Live transcription started with SpeechAnalyzer")
-                print("✅ Audio converter ready: \(inputFormat.sampleRate)Hz → \(optimalFormat.sampleRate)Hz")
 
                 // Observe current (partial) transcript updates
                 currentTranscriptCancellable = transcriptionService?.$currentTranscript
@@ -406,7 +412,6 @@ class AudioRecorder: ObservableObject {
                     .receive(on: DispatchQueue.main)
                     .assign(to: \.finalizedSegments, on: self)
             } catch {
-                print("Failed to start live transcription: \(error)")
             }
         }
     }

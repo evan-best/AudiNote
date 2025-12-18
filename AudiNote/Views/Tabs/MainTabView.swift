@@ -26,13 +26,15 @@ struct MainTabView: View {
 		ZStack(alignment: .bottom) {
 			RecordingsView(navigationPath: $navigationPath)
 
-			RecordButton(
-				recorder: recorder,
-				onRecordTapped: {
-					showSheet = true
-				}
-			)
-			.matchedTransitionSource(id: "Record", in: animation)
+			if navigationPath.isEmpty {
+				RecordButton(
+					recorder: recorder,
+					onRecordTapped: {
+						showSheet = true
+					}
+				)
+				.matchedTransitionSource(id: "Record", in: animation)
+			}
 		}
 		.sheet(isPresented: $showSheet) {
 			RecordingSheet(recorder: recorder, presentationDetent: detent) { recording in

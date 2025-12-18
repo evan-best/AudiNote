@@ -7,25 +7,33 @@
 
 import Foundation
 import AVFoundation
-import Combine
+import Observation
 
-class AudioPlayer: ObservableObject {
-    @Published var isPlaying: Bool = false
-    @Published var currentTime: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
-    
+@Observable
+class AudioPlayer {
+    var isPlaying: Bool = false
+    var currentTime: TimeInterval = 0
+    var duration: TimeInterval = 0
+
     private var player: AVAudioPlayer?
     private var timer: Timer?
 
     func load(url: URL) {
         stop()
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            player = nil
+            duration = 0
+            currentTime = 0
+            return
+        }
+
         do {
             player = try AVAudioPlayer(contentsOf: url)
             player?.prepareToPlay()
             duration = player?.duration ?? 0
             currentTime = 0
         } catch {
-            print("Failed to load audio: \(error)")
             player = nil
             duration = 0
             currentTime = 0

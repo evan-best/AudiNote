@@ -51,11 +51,12 @@ final class RecordingManager: ObservableObject {
         // Save ONLY the filename (not full path) for persistence across app launches
         let filename = recordingURL.lastPathComponent
         let hasTranscript = !recorder.finalizedSegments.isEmpty
+
         let newRecording = Recording(
             title: title,
             timestamp: Date(),
             duration: recorder.elapsed,
-            audioFilePath: filename, // Store only filename, not full path
+            audioFilePath: filename,
             transcriptSegments: hasTranscript ? recorder.finalizedSegments : nil,
             isTranscribed: hasTranscript
         )
@@ -63,15 +64,11 @@ final class RecordingManager: ObservableObject {
         modelContext.insert(newRecording)
         try modelContext.save()
 
-        print("✅ Saved recording filename: \(filename)")
-        print("✅ Full path: \(recordingURL.path)")
-        print("✅ File exists: \(FileManager.default.fileExists(atPath: recordingURL.path))")
-
         // Show success toast
         ToastManager.shared.show(type: .success, message: "Recording saved")
 
         // Start transcription in background if not already captured
-        if recorder.finalizedSegments.isEmpty {
+        if !hasTranscript {
             Task {
                 await transcribeRecording(newRecording)
             }
@@ -86,7 +83,9 @@ final class RecordingManager: ObservableObject {
         // Check authorization first
         let authorized = await transcriptionService.requestAuthorization()
         guard authorized else {
-            print("Speech recognition not authorized")
+            print("❌ Speech recognition not authorized")
+            recording.isTranscribing = false
+            try? modelContext.save()
             return
         }
 
@@ -98,21 +97,65 @@ final class RecordingManager: ObservableObject {
             return
         }
 
-        print("🎤 Starting transcription for: \(audioURL.path)")
+        // Verify file exists and is not empty
+        guard FileManager.default.fileExists(atPath: audioURL.path) else {
+            print("❌ Audio file does not exist at path: \(audioURL.path)")
+            recording.isTranscribing = false
+            try? modelContext.save()
+            return
+        }
 
-        // Mark as transcribing
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: audioURL.path)
+            if let fileSize = attributes[.size] as? UInt64, fileSize == 0 {
+                recording.isTranscribing = false
+                try? modelContext.save()
+                return
+            }
+        } catch {
+            return
+        }
+
         recording.isTranscribing = true
         try? modelContext.save()
 
         do {
-            // Perform transcription
-            let segments = try await transcriptionService.transcribe(audioURL: audioURL)
+            // Perform transcription with timeout
+            let segments = try await withThrowingTaskGroup(of: [TranscriptSegment].self) { group in
+                group.addTask {
+                    return try await self.transcriptionService.transcribe(audioURL: audioURL)
+                }
+
+                // Add timeout task
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 60_000_000_000) // 60 seconds
+                    throw TranscriptionError.timeout
+                }
+
+                // Return first completed task (either transcription or timeout)
+                guard let result = try await group.next() else {
+                    throw TranscriptionError.unknown
+                }
+                group.cancelAll()
+                return result
+            }
 
             // Update recording with segments
-            recording.updateTranscriptSegments(segments)
+            if !segments.isEmpty {
+                recording.updateTranscriptSegments(segments)
+                try modelContext.save()
+            } else {
+                recording.isTranscribing = false
+                try modelContext.save()
+            }
+        } catch is CancellationError {
+            print("⚠️ Transcription cancelled")
+            recording.isTranscribing = false
             try? modelContext.save()
-
-            print("✅ Transcription complete: \(segments.count) segments")
+        } catch let error as TranscriptionError {
+            print("❌ Transcription failed: \(error.localizedDescription)")
+            recording.isTranscribing = false
+            try? modelContext.save()
         } catch {
             print("❌ Transcription failed: \(error.localizedDescription)")
             recording.isTranscribing = false

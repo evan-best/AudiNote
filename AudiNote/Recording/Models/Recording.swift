@@ -129,12 +129,12 @@ final class Recording {
 
     /// Get the full URL for the audio file, reconstructing from Documents directory
     var audioFileURL: URL? {
-        // If path is empty, return nil
         guard !audioFilePath.isEmpty else { return nil }
+
+        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 
         // If it's just a filename (no slashes), reconstruct full path
         if !audioFilePath.contains("/") {
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             return documentsDir.appendingPathComponent(audioFilePath)
         }
 
@@ -145,9 +145,7 @@ final class Recording {
 
         // If full path doesn't exist, try extracting filename and reconstructing
         let filename = (audioFilePath as NSString).lastPathComponent
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let reconstructedURL = documentsDir.appendingPathComponent(filename)
-
         return FileManager.default.fileExists(atPath: reconstructedURL.path) ? reconstructedURL : nil
     }
 }
