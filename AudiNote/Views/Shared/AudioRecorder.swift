@@ -415,7 +415,7 @@ class AudioRecorder: ObservableObject {
     }
 
     func getDocumentsDirectory() -> URL {
-        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        AudioStorage.localDirectoryURL()
     }
 
     private func isBluetoothOutputActive(_ session: AVAudioSession) -> Bool {

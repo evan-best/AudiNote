@@ -19,6 +19,9 @@ struct RecordingDetailView: View {
     @State private var showTagSheet = false
     @State private var newTag = ""
     @State private var wasPlayingBeforeScrub = false
+    @State private var showRenameAlert = false
+    @State private var renameTitle = ""
+	@State private var controlsHeight: CGFloat = 0
 
     init(recording: Recording) {
         self._recording = Bindable(recording)
@@ -26,101 +29,37 @@ struct RecordingDetailView: View {
     }
     
 	var body: some View {
-		VStack {
-			ScrollView {
-				VStack(spacing: 20) {
-					// Transcript section
-					Group {
-						if recording.isTranscribing {
-							TranscriptionStatusView(isTranscribing: true, isTranscribed: false)
-						} else if !viewModel.transcriptSegments.isEmpty {
-							TranscriptView(
-								segments: viewModel.transcriptSegments,
-								currentTime: viewModel.audioPlayer.currentTime,
-								onTimestampTap: { timestamp in
-									viewModel.seekAndPlay(to: timestamp)
-								}
-							)
-							.frame(minHeight: 600)
-						} else {
-							TranscriptionStatusView(isTranscribing: false, isTranscribed: false)
+		ZStack(alignment: .bottom) {
+			// Transcript section
+			Group {
+				if recording.isTranscribing {
+					TranscriptionStatusView(isTranscribing: true, isTranscribed: false)
+				} else if !viewModel.transcriptSegments.isEmpty {
+					TranscriptView(
+						segments: viewModel.transcriptSegments,
+						currentTime: viewModel.audioPlayer.currentTime,
+						onTimestampTap: { timestamp in
+							viewModel.seekAndPlay(to: timestamp)
 						}
-					}
-					.padding(.top, 8)
+					)
+				} else {
+					TranscriptionStatusView(isTranscribing: false, isTranscribed: false)
 				}
-				.padding()
 			}
-			.scrollEdgeEffectStyle(.soft, for: .bottom)
+			.padding(.top, 8)
+			.padding()
+			.padding(.bottom, viewModel.shouldShowControls ? controlsHeight : 0)
 
-			// Slider and playback controls
-			if viewModel.isAudioLoaded {
-				VStack(spacing: 20) {
-					// Playback slider
-					VStack(spacing: 8) {
-							Text(viewModel.timeDisplay)
-							.font(.system(size: 40, weight: .semibold))
-							.bold()
-							.monospacedDigit()
-
-                        Slider(
-                            value: viewModel.currentTimeBinding,
-                            in: 0...max(1, viewModel.audioPlayer.duration),
-                            onEditingChanged: { isEditing in
-                                if isEditing {
-                                    if viewModel.audioPlayer.isPlaying {
-                                        wasPlayingBeforeScrub = true
-                                        viewModel.audioPlayer.pause()
-                                    } else {
-                                        wasPlayingBeforeScrub = false
-                                    }
-                                } else if wasPlayingBeforeScrub {
-                                    viewModel.audioPlayer.play()
-                                }
-                            }
-                        )
-					}
-					.padding(.horizontal, 20)
-
-					// Floating playback controls
-					HStack(spacing: 12) {
-						// Skip backward
-						Button(action: {
-							session.triggerHaptic(style: .light)
-							viewModel.skipBackward()
-						}) {
-							Image(systemName: "gobackward.10")
-								.font(.system(size: 24, weight: .semibold))
-								.padding(8)
-						}
-						.buttonStyle(.glass)
-
-						// Play/Pause
-						Button(action: {
-							session.triggerHaptic(style: .medium)
-							viewModel.togglePlayPause()
-						}) {
-							Image(systemName: viewModel.audioPlayer.isPlaying ? "pause.fill" : "play.fill")
-								.font(.system(size: 22, weight: .semibold))
-								.padding(.horizontal, 42)
-								.padding(.vertical, 12 )
-						}
-						.buttonStyle(.glassProminent)
-
-						// Skip forward
-						Button(action: {
-							session.triggerHaptic(style: .light)
-							viewModel.skipForward()
-						}) {
-							Image(systemName: "goforward.10")
-								.font(.system(size: 22, weight: .semibold))
-								.padding(8)
-						}
-						.buttonStyle(.glass)
-					}
-					.padding(.horizontal, 20)
+			if viewModel.shouldShowControls {
+				VStack(spacing: 0) {
+					playbackControls
 				}
-				.padding(.bottom)
+				.background(Color(.systemBackground))
+				.background(ControlsHeightReader())
 			}
+		}
+		.onPreferenceChange(ControlsHeightPreferenceKey.self) { value in
+			controlsHeight = value
 		}
 		.navigationTitle(recording.title)
 		.navigationSubtitle(Text(recording.timestamp, format: .dateTime.day().month().year().hour().minute()))
@@ -135,6 +74,13 @@ struct RecordingDetailView: View {
 			}
 			ToolbarItem {
 				Menu {
+					Button {
+						renameTitle = recording.title.isEmpty ? "Untitled" : recording.title
+						showRenameAlert = true
+					} label: {
+						Label("Rename", systemImage: "pencil")
+					}
+
 					Button {
 						showTagSheet = true
 					} label: {
@@ -163,15 +109,129 @@ struct RecordingDetailView: View {
 		} message: {
 			Text("Are you sure you want to delete this recording? This action cannot be undone.")
 		}
+		.alert("Rename Recording", isPresented: $showRenameAlert) {
+			TextField("Recording name", text: $renameTitle)
+			Button("Save") {
+				let trimmed = renameTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+				recording.title = trimmed
+				try? modelContext.save()
+			}
+			Button("Cancel", role: .cancel) { }
+		} message: {
+			Text("Enter a new name for this recording.")
+		}
 		.sheet(isPresented: $showTagSheet) {
 			TagEditorSheet(recording: recording, newTag: $newTag)
 		}
 		.onAppear {
 			viewModel.loadAudioIfNeeded()
+			viewModel.configure(modelContext: modelContext)
 		}
         .onDisappear {
             viewModel.audioPlayer.stop()
         }
+	}
+
+
+	private var playbackControls: some View {
+		VStack(spacing: 20) {
+			// Playback slider
+			VStack(spacing: 8) {
+				Text(viewModel.timeDisplay)
+					.font(.system(size: 40, weight: .semibold))
+					.bold()
+					.monospacedDigit()
+
+				Slider(
+					value: viewModel.currentTimeBinding,
+					in: 0...max(1, viewModel.audioPlayer.duration),
+					onEditingChanged: { isEditing in
+						if isEditing {
+							if viewModel.audioPlayer.isPlaying {
+								wasPlayingBeforeScrub = true
+								viewModel.audioPlayer.pause()
+							} else {
+								wasPlayingBeforeScrub = false
+							}
+						} else if wasPlayingBeforeScrub {
+							viewModel.audioPlayer.play()
+						}
+					}
+				)
+			}
+			.padding(.horizontal, 20)
+
+			// Floating playback controls
+			HStack(spacing: 12) {
+				// Skip backward
+				Button(action: {
+					session.triggerHaptic(style: .light)
+					viewModel.skipBackward()
+				}) {
+					Image(systemName: "gobackward.10")
+						.font(.system(size: 24, weight: .semibold))
+						.padding(8)
+				}
+				.buttonStyle(.glass)
+
+				// Play/Pause
+				Button(action: {
+					session.triggerHaptic(style: .medium)
+					viewModel.togglePlayPause()
+				}) {
+					Image(systemName: viewModel.audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+						.font(.system(size: 22, weight: .semibold))
+						.padding(.horizontal, 42)
+						.padding(.vertical, 12 )
+				}
+				.buttonStyle(.glassProminent)
+
+				// Skip forward
+				Button(action: {
+					session.triggerHaptic(style: .light)
+					viewModel.skipForward()
+				}) {
+					Image(systemName: "goforward.10")
+						.font(.system(size: 22, weight: .semibold))
+						.padding(8)
+				}
+				.buttonStyle(.glass)
+			}
+			.padding(.horizontal, 20)
+			if (viewModel.isCloudAudio || viewModel.isDownloadingAudio) && !viewModel.isAudioLoaded {
+				VStack(spacing: 6) {
+					Text("Downloading audio from iCloud")
+						.font(.system(size: 12, weight: .medium))
+						.foregroundStyle(.secondary)
+					if viewModel.downloadProgress > 0 {
+						ProgressView(value: viewModel.downloadProgress)
+							.progressViewStyle(.linear)
+							.frame(maxWidth: 220)
+					} else {
+						ProgressView()
+							.progressViewStyle(.circular)
+					}
+				}
+			}
+		}
+		.padding(.vertical, 12)
+		.disabled(!viewModel.isAudioLoaded)
+		.opacity(viewModel.isAudioLoaded ? 1 : 0.6)
+	}
+}
+
+private struct ControlsHeightPreferenceKey: PreferenceKey {
+	static var defaultValue: CGFloat = 0
+	static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+		value = nextValue()
+	}
+}
+
+private struct ControlsHeightReader: View {
+	var body: some View {
+		GeometryReader { geometry in
+			Color.clear.preference(key: ControlsHeightPreferenceKey.self, value: geometry.size.height)
+		}
 	}
 }
 

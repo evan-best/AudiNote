@@ -10,10 +10,12 @@ enum RecordingSortOption: String, CaseIterable, Identifiable {
 struct RecordingsView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @EnvironmentObject private var session: SessionViewModel
 
     @Query(sort: \Recording.timestamp, order: .reverse) private var recordings: [Recording]
     @Binding var navigationPath: NavigationPath
+    private let recordButton: AnyView?
 
     @State private var showSettings = false
     @State private var showSortSheet = false
@@ -21,50 +23,39 @@ struct RecordingsView: View {
     @State private var ascending: Bool = false
     @State private var showDeleteAlert = false
     @State private var recordingsToDelete: [Recording] = []
+    @State private var selectedRecordingID: PersistentIdentifier?
+    @State private var searchText: String = ""
+    @State private var didBackfillAudioData = false
+    init(navigationPath: Binding<NavigationPath>, recordButton: AnyView? = nil) {
+        self._navigationPath = navigationPath
+        self.recordButton = recordButton
+    }
+
     var body: some View {
-        NavigationStack(path: $navigationPath) {
-            recordingsList
-                .navigationTitle("Recordings")
-                .navigationBarTitleDisplayMode(.large)
-				.navigationSubtitle("Record, transcribe, and share.")
-                .navigationDestination(for: Recording.self) { recording in
-                    RecordingDetailView(recording: recording)
-                }
-                .toolbar {
-                Group {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        session.triggerHaptic(style: .light)
-                        showSortSheet = true
-                    } label: {
-                        Label("Sort By", systemImage: "line.3.horizontal.decrease")
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        session.triggerHaptic(style: .light)
-                        showSettings = true
-                    } label: {
-                        Label("Settings", systemImage: "gearshape")
-                    }
-                }
-                ToolbarItem(placement: .topBarLeading) {
-                    EditButton()
-                        .onTapGesture {
-                            session.triggerHaptic(style: .light)
-                        }
-                }
-                }
+        Group {
+            if horizontalSizeClass == .regular {
+                splitView
+            } else {
+                compactView
             }
-            .sheet(isPresented: $showSortSheet) {
-                SortSheetView(
-                    selectedSort: $selectedSort,
-                    ascending: $ascending
-                )
+        }
+        .onChange(of: displayRecordings) { _, newValue in
+            if let selectedRecordingID,
+               !newValue.contains(where: { $0.persistentModelID == selectedRecordingID }) {
+                self.selectedRecordingID = nil
             }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-            }
+        }
+        .sheet(isPresented: $showSortSheet) {
+            SortSheetView(
+                selectedSort: $selectedSort,
+                ascending: $ascending
+            )
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
+        .task {
+            await backfillAudioDataIfNeeded()
         }
     }
 
@@ -80,16 +71,67 @@ struct RecordingsView: View {
                 : recordings.sorted { $0.duration > $1.duration }
         }
     }
+
+    private var splitView: some View {
+        NavigationSplitView {
+            NavigationStack {
+                recordingsListSplit
+                    .navigationTitle("Recordings")
+                    .navigationBarTitleDisplayMode(.large)
+                    .navigationSubtitle("Record, transcribe, and share.")
+                    .toolbar {
+                        recordingsToolbar
+                    }
+            }
+        } detail: {
+            NavigationStack {
+                detailContent
+                    .id(selectedRecordingID)
+            }
+        }
+    }
+
+    private var compactView: some View {
+        NavigationStack(path: $navigationPath) {
+            recordingsList
+                .navigationTitle("Recordings")
+                .navigationBarTitleDisplayMode(.large)
+                .navigationSubtitle("Record, transcribe, and share.")
+                .navigationDestination(for: Recording.self) { recording in
+                    RecordingDetailView(recording: recording)
+                }
+                .toolbar {
+                    recordingsToolbar
+                }
+        }
+    }
     
     private var displayRecordings: [Recording] {
-        return sortedRecordings
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            return sortedRecordings
+        }
+
+        let lowercased = query.lowercased()
+        return sortedRecordings.filter { recording in
+            if recording.title.lowercased().contains(lowercased) {
+                return true
+            }
+            if recording.displayTranscript?.lowercased().contains(lowercased) == true {
+                return true
+            }
+            if recording.notes?.lowercased().contains(lowercased) == true {
+                return true
+            }
+            return recording.tags.contains { $0.lowercased().contains(lowercased) }
+        }
     }
     
 
     private var recordingsList: some View {
         List {
             if displayRecordings.isEmpty {
-                Text("No recordings yet")
+                Text(searchText.isEmpty ? "No recordings yet" : "No results")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 40)
@@ -102,15 +144,18 @@ struct RecordingsView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
                             .padding(.bottom, 12)
+                            .contentShape(Rectangle())
                     }
                     .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 16))
-                    .listRowSeparator(.visible)
+                    .listRowSeparator(.hidden)
                 }
                 .onDelete(perform: confirmDelete)
             }
         }
-		.listRowSpacing(4.0)
+        .listRowSpacing(4.0)
         .listStyle(.plain)
+        .listRowSeparator(.hidden)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .automatic))
         .alert("Delete Recording", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) {
                 deleteRecordings()
@@ -120,6 +165,93 @@ struct RecordingsView: View {
             Text(recordingsToDelete.count == 1 ? 
                  "Are you sure you want to delete this recording? This action cannot be undone." :
                  "Are you sure you want to delete these \(recordingsToDelete.count) recordings? This action cannot be undone.")
+        }
+    }
+
+    private var recordingsListSplit: some View {
+        List(selection: $selectedRecordingID) {
+            if displayRecordings.isEmpty {
+                Text(searchText.isEmpty ? "No recordings yet" : "No results")
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 40)
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+            } else {
+                ForEach(displayRecordings) { recording in
+                    RecordingRow(recording: recording)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                        .padding(.bottom, 12)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedRecordingID = recording.persistentModelID
+                        }
+                        .tag(recording.persistentModelID)
+                    .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 16))
+                    .listRowSeparator(.hidden)
+                }
+                .onDelete(perform: confirmDelete)
+            }
+        }
+        .listRowSpacing(4.0)
+        .listStyle(.plain)
+        .listRowSeparator(.hidden)
+        .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always))
+        .tint(.primary)
+        .safeAreaInset(edge: .bottom) {
+            if let recordButton {
+                recordButton
+            }
+        }
+        .alert("Delete Recording", isPresented: $showDeleteAlert) {
+            Button("Delete", role: .destructive) {
+                deleteRecordings()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(recordingsToDelete.count == 1 ?
+                 "Are you sure you want to delete this recording? This action cannot be undone." :
+                 "Are you sure you want to delete these \(recordingsToDelete.count) recordings? This action cannot be undone.")
+        }
+    }
+
+    @ViewBuilder
+    private var detailContent: some View {
+        if let selectedRecordingID,
+           let selectedRecording = recordings.first(where: { $0.persistentModelID == selectedRecordingID }) {
+            RecordingDetailView(recording: selectedRecording)
+        } else {
+            Text("No recording selected")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var recordingsToolbar: some ToolbarContent {
+        Group {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    session.triggerHaptic(style: .light)
+                    showSortSheet = true
+                } label: {
+                    Label("Sort By", systemImage: "line.3.horizontal.decrease")
+                }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    session.triggerHaptic(style: .light)
+                    showSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+            }
+            ToolbarItem(placement: .topBarLeading) {
+                EditButton()
+                    .onTapGesture {
+                        session.triggerHaptic(style: .light)
+                    }
+            }
         }
     }
 
@@ -147,6 +279,28 @@ struct RecordingsView: View {
             recordingsToDelete = []
         }
     }
+
+    @MainActor
+    private func backfillAudioDataIfNeeded() async {
+        guard !didBackfillAudioData else { return }
+        didBackfillAudioData = true
+
+        var didUpdate = false
+        for recording in recordings where recording.audioData == nil {
+            guard let url = recording.audioFileURL,
+                  FileManager.default.fileExists(atPath: url.path) else {
+                continue
+            }
+            if let data = try? Data(contentsOf: url) {
+                recording.audioData = data
+                didUpdate = true
+            }
+        }
+
+        if didUpdate {
+            try? modelContext.save()
+        }
+    }
 }
 
 private struct SortSheetView: View {
@@ -159,18 +313,13 @@ private struct SortSheetView: View {
     
     var body: some View {
         VStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 3)
-                .frame(width: 40, height: 5)
-                .foregroundColor(Color.secondary.opacity(0.4))
-                .padding(.top, 8)
-            
             HStack(spacing: 8) {
                 Text("Sort By")
                     .font(.system(size: 18, weight: .semibold))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 4)
-            
+
             VStack(spacing: 16) {
                 sortRow(title: "Newest", sort: .date, isAscending: false)
                 sortRow(title: "Oldest", sort: .date, isAscending: true)
@@ -178,8 +327,7 @@ private struct SortSheetView: View {
                 sortRow(title: "Shortest", sort: .length, isAscending: true)
             }
             .padding(.horizontal, 32)
-            Spacer()
-            
+
             Button {
                 session.triggerHaptic(style: .light)
                 dismiss()
@@ -193,8 +341,13 @@ private struct SortSheetView: View {
                     .clipShape(Capsule())
             }
             .padding(.horizontal, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 16)
         }
-        .presentationDetents([.fraction(0.4)])
+        .frame(maxWidth: 420)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .presentationDetents([.height(360)])
+        .presentationDragIndicator(.visible)
     }
     
     @ViewBuilder

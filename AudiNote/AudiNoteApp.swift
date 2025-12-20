@@ -21,16 +21,29 @@ struct AudiNoteApp: App {
         // Use a versioned database name to allow fresh starts when schema changes
         let dbName = "AudiNote_v3"
 
-        // First, try simple local storage (most reliable for development)
+        // Primary configuration: CloudKit-backed storage for sync across devices
         do {
-            let localConfig = ModelConfiguration(
+            let cloudConfig = ModelConfiguration(
                 dbName,
                 schema: schema,
                 isStoredInMemoryOnly: false,
-                allowsSave: true
+                allowsSave: true,
+                cloudKitDatabase: .private("iCloud.AudiNote")
             )
-            return try ModelContainer(for: schema, configurations: [localConfig])
+            return try ModelContainer(for: schema, configurations: [cloudConfig])
         } catch {
+            // If CloudKit storage fails, use local storage as a fallback
+            do {
+                let localConfig = ModelConfiguration(
+                    dbName,
+                    schema: schema,
+                    isStoredInMemoryOnly: false,
+                    allowsSave: true
+                )
+                return try ModelContainer(for: schema, configurations: [localConfig])
+            } catch {
+            }
+
             // If local storage fails, use in-memory as absolute fallback
             do {
                 let memoryConfig = ModelConfiguration(

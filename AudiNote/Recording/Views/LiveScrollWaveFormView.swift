@@ -413,35 +413,9 @@ struct TranscriptionStackView: View {
 					.padding(.top, 50)
 					.padding(.bottom, 80) // Extra padding at bottom to prevent cutoff
 				}
+				.scrollEdgeEffectStyle(.soft, for: .top)
+				.scrollEdgeEffectStyle(.soft, for: .bottom)
 				.frame(width: geometry.size.width, height: geometry.size.height)
-				.overlay(
-					VStack(spacing: 0) {
-						// Top blur fade
-						LinearGradient(
-							colors: [
-								Color(.systemBackground),
-								Color(.systemBackground).opacity(0)
-							],
-							startPoint: .top,
-							endPoint: .bottom
-						)
-						.frame(height: 50)
-						
-						Spacer()
-						
-						// Bottom blur fade
-						LinearGradient(
-							colors: [
-								Color(.systemBackground).opacity(0),
-								Color(.systemBackground)
-							],
-							startPoint: .top,
-							endPoint: .bottom
-						)
-						.frame(height: 50)
-					}
-						.allowsHitTesting(false)
-				)
 				.onChange(of: finalizedSegments.count) { _, _ in
 					// Auto-scroll to second-to-last segment so the new one appears at the bottom
 					if finalizedSegments.count >= 2 {

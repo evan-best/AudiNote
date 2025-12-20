@@ -54,13 +54,17 @@ final class RecordingManager: ObservableObject {
 
         // Save ONLY the filename (not full path) for persistence across app launches
         let filename = recordingURL.lastPathComponent
+        _ = AudioStorage.ensureUbiquitousCopy(from: recordingURL, fileName: filename)
         let hasTranscript = !segmentsToSave.isEmpty
+
+        let audioData = try? Data(contentsOf: recordingURL)
 
         let newRecording = Recording(
             title: title,
             timestamp: Date(),
             duration: recorder.elapsed,
             audioFilePath: filename,
+            audioData: audioData,
             transcriptSegments: hasTranscript ? segmentsToSave : nil,
             isTranscribed: hasTranscript
         )

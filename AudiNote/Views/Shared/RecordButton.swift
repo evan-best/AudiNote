@@ -12,18 +12,34 @@ struct RecordButton: View {
     @ObservedObject var recorder: AudioRecorder
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var session: SessionViewModel
+    @Environment(\.colorScheme) private var colorScheme
     @Namespace private var animation
 
     var onRecordTapped: (() -> Void)? = nil
     var onSave: ((Recording) -> Void)? = nil
+    var maxWidth: CGFloat? = nil
 
     // Permission alert state
     @State private var showMicAlert = false
 
-    init(recorder: AudioRecorder, onRecordTapped: (() -> Void)? = nil, onSave: ((Recording) -> Void)? = nil) {
+    init(
+        recorder: AudioRecorder,
+        onRecordTapped: (() -> Void)? = nil,
+        onSave: ((Recording) -> Void)? = nil,
+        maxWidth: CGFloat? = nil
+    ) {
         self.recorder = recorder
         self.onRecordTapped = onRecordTapped
         self.onSave = onSave
+        self.maxWidth = maxWidth
+    }
+
+    private var buttonBackground: Color {
+        colorScheme == .dark ? .white : .black
+    }
+
+    private var buttonForeground: Color {
+        colorScheme == .dark ? .black : .white
     }
     
     var body: some View {
@@ -38,7 +54,7 @@ struct RecordButton: View {
                 }) {
                     HStack(spacing: 12) {
                         // Waveform takes up most space
-                        WaveformView(amplitudes: recorder.amplitudes, color: Color(.systemBackground), isPaused: recorder.isPaused)
+                        WaveformView(amplitudes: recorder.amplitudes, color: buttonForeground, isPaused: recorder.isPaused)
                             .frame(height: 20)
                         
                         Spacer()
@@ -48,7 +64,7 @@ struct RecordButton: View {
                             if recorder.isPaused {
                                 Image(systemName: "pause.fill")
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(Color(.systemBackground))
+                                    .foregroundColor(buttonForeground)
                             } else {
                                 Circle()
                                     .fill(Color.red)
@@ -57,13 +73,13 @@ struct RecordButton: View {
                             
                             Text(recorder.elapsedTimeFormatted)
                                 .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(Color(.systemBackground))
+                                .foregroundColor(buttonForeground)
                                 .monospacedDigit()
                                 .frame(minWidth: 50, alignment: .leading)
                         }
                     }
                     .padding(18)
-                    .background(Color.primary)
+                    .background(buttonBackground)
                     .clipShape(Capsule())
                     .padding(.horizontal, 28)
                 }
@@ -87,14 +103,14 @@ struct RecordButton: View {
                     HStack(spacing: 4) {
                         Spacer()
                         Image(systemName:"record.circle.fill")
-                            .foregroundStyle(.red)
+                            .foregroundColor(.red)
                         Text("Record")
-                            .foregroundStyle(.background)
+                            .foregroundColor(buttonForeground)
                         Spacer()
                     }
                     .font(.system(size: 18, weight: .semibold))
                     .padding(18)
-                    .background(Color.primary)
+                    .background(buttonBackground)
                     .clipShape(Capsule())
                     .padding(.horizontal, 28)
                 }
@@ -111,7 +127,7 @@ struct RecordButton: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: maxWidth ?? .infinity)
     }
     
     // MARK: - Actions

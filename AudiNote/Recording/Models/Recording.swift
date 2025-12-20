@@ -14,6 +14,7 @@ final class Recording {
     var timestamp: Date = Date()
     var duration: Double = 0.0
     var audioFilePath: String = ""
+    @Attribute(.externalStorage) var audioData: Data?
     var transcript: String?
     var transcriptSegments: Data? // Store TranscriptSegment array as JSON
     var notes: String?
@@ -28,6 +29,7 @@ final class Recording {
         timestamp: Date = Date(),
         duration: Double = 0.0,
         audioFilePath: String = "",
+        audioData: Data? = nil,
         transcript: String? = nil,
         transcriptSegments: [TranscriptSegment]? = nil,
         notes: String? = nil,
@@ -41,6 +43,7 @@ final class Recording {
         self.timestamp = timestamp
         self.duration = duration
         self.audioFilePath = audioFilePath
+        self.audioData = audioData
         self.notes = notes
         self.isTranscribed = isTranscribed
         self.isTranscribing = isTranscribing
@@ -148,21 +151,22 @@ final class Recording {
     var audioFileURL: URL? {
         guard !audioFilePath.isEmpty else { return nil }
 
-        let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileName = (audioFilePath as NSString).lastPathComponent
+        let localURL = AudioStorage.localFileURL(fileName: fileName)
 
-        // If it's just a filename (no slashes), reconstruct full path
-        if !audioFilePath.contains("/") {
-            return documentsDir.appendingPathComponent(audioFilePath)
+        if FileManager.default.fileExists(atPath: localURL.path) {
+            return localURL
         }
 
-        // If it's a full path, check if it exists
-        if FileManager.default.fileExists(atPath: audioFilePath) {
-            return URL(fileURLWithPath: audioFilePath)
+        if let data = audioData {
+            do {
+                try data.write(to: localURL, options: .atomic)
+                return localURL
+            } catch {
+                return nil
+            }
         }
 
-        // If full path doesn't exist, try extracting filename and reconstructing
-        let filename = (audioFilePath as NSString).lastPathComponent
-        let reconstructedURL = documentsDir.appendingPathComponent(filename)
-        return FileManager.default.fileExists(atPath: reconstructedURL.path) ? reconstructedURL : nil
+        return AudioStorage.resolveAudioURL(from: audioFilePath)
     }
 }
