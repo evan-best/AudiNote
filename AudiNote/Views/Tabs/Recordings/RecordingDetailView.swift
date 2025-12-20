@@ -18,6 +18,7 @@ struct RecordingDetailView: View {
     @State private var showDeleteAlert = false
     @State private var showTagSheet = false
     @State private var newTag = ""
+    @State private var wasPlayingBeforeScrub = false
 
     init(recording: Recording) {
         self._recording = Bindable(recording)
@@ -25,25 +26,27 @@ struct RecordingDetailView: View {
     }
     
 	var body: some View {
-		ZStack(alignment: .bottom) {
+		VStack {
 			ScrollView {
 				VStack(spacing: 20) {
 					// Transcript section
-					VStack(alignment: .leading, spacing: 12) {
+					Group {
 						if recording.isTranscribing {
 							TranscriptionStatusView(isTranscribing: true, isTranscribed: false)
-						} else if recording.isTranscribed && !recording.decodedTranscriptSegments.isEmpty {
-							TranscriptView(segments: recording.decodedTranscriptSegments) { timestamp in
-								viewModel.seekAndPlay(to: timestamp)
-							}
+						} else if !viewModel.transcriptSegments.isEmpty {
+							TranscriptView(
+								segments: viewModel.transcriptSegments,
+								currentTime: viewModel.audioPlayer.currentTime,
+								onTimestampTap: { timestamp in
+									viewModel.seekAndPlay(to: timestamp)
+								}
+							)
+							.frame(minHeight: 600)
 						} else {
 							TranscriptionStatusView(isTranscribing: false, isTranscribed: false)
 						}
 					}
 					.padding(.top, 8)
-
-					// Bottom padding to avoid content being hidden by floating controls
-					Color.clear.frame(height: 100)
 				}
 				.padding()
 			}
@@ -59,7 +62,22 @@ struct RecordingDetailView: View {
 							.bold()
 							.monospacedDigit()
 
-						Slider(value: viewModel.currentTimeBinding, in: 0...max(1, viewModel.audioPlayer.duration))
+                        Slider(
+                            value: viewModel.currentTimeBinding,
+                            in: 0...max(1, viewModel.audioPlayer.duration),
+                            onEditingChanged: { isEditing in
+                                if isEditing {
+                                    if viewModel.audioPlayer.isPlaying {
+                                        wasPlayingBeforeScrub = true
+                                        viewModel.audioPlayer.pause()
+                                    } else {
+                                        wasPlayingBeforeScrub = false
+                                    }
+                                } else if wasPlayingBeforeScrub {
+                                    viewModel.audioPlayer.play()
+                                }
+                            }
+                        )
 					}
 					.padding(.horizontal, 20)
 
@@ -151,6 +169,9 @@ struct RecordingDetailView: View {
 		.onAppear {
 			viewModel.loadAudioIfNeeded()
 		}
+        .onDisappear {
+            viewModel.audioPlayer.stop()
+        }
 	}
 }
 
@@ -244,4 +265,3 @@ struct TagEditorSheet: View {
 		)
 	}
 }
-

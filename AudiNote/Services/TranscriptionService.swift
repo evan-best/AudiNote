@@ -11,17 +11,25 @@ import AVFoundation
 import Combine
 import CoreMedia
 
+struct WordTiming: Codable {
+    let word: String
+    let timestamp: TimeInterval // Relative to segment start
+    let duration: TimeInterval
+}
+
 struct TranscriptSegment: Codable, Identifiable {
     let id: UUID
     let text: String
     let timestamp: TimeInterval
     let duration: TimeInterval
+    let wordTimings: [WordTiming]? // Word-level timing from Speech API
 
-    init(text: String, timestamp: TimeInterval, duration: TimeInterval) {
+    init(text: String, timestamp: TimeInterval, duration: TimeInterval, wordTimings: [WordTiming]? = nil) {
         self.id = UUID()
         self.text = text
         self.timestamp = timestamp
         self.duration = duration
+        self.wordTimings = wordTimings
     }
 
     var formattedTimestamp: String {
@@ -47,6 +55,7 @@ class TranscriptionService: ObservableObject {
     private var transcriber: SpeechTranscriber?
     private var transcriptionStartTime: Date?
     private var transcriptionTask: Task<Void, Never>?
+    private var baseTimeOffset: TimeInterval = 0
 
     // Stream for feeding audio buffers
     private var audioStream: AsyncStream<AnalyzerInput>?
@@ -87,7 +96,7 @@ class TranscriptionService: ObservableObject {
 
     // Start streaming transcription from audio buffers (for live recording)
     // Returns the optimal audio format to use for buffers
-    func startStreamingTranscription() async throws -> AVAudioFormat {
+    func startStreamingTranscription(timeOffset: TimeInterval = 0) async throws -> AVAudioFormat {
         // Check authorization
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else {
             throw TranscriptionError.notAuthorized
@@ -99,14 +108,17 @@ class TranscriptionService: ObservableObject {
         lastFinalizedText = ""
         isTranscribing = true
         transcriptionStartTime = Date()
+        baseTimeOffset = max(0, timeOffset)
 
         // Use en_US explicitly to avoid locale allocation warnings
         let locale = Locale(identifier: "en_US")
 
-        // Create transcriber module for live progressive transcription
+        // Create transcriber module for live progressive transcription with timing info
         let transcriber = SpeechTranscriber(
             locale: locale,
-            preset: .progressiveTranscription
+            transcriptionOptions: [],
+            reportingOptions: [.volatileResults],
+            attributeOptions: [.audioTimeRange]
         )
         self.transcriber = transcriber
 
@@ -160,28 +172,94 @@ class TranscriptionService: ObservableObject {
 
                         self.lastFinalizedText = plainText
 
-                        // Use actual timestamps from response
-                        let timestamp: TimeInterval
-                        let duration: TimeInterval
+                        // Extract word-level timing from AttributedString runs
+                        var wordTimings: [WordTiming] = []
+                        var segmentStartTime: TimeInterval = 0
+                        var segmentEndTime: TimeInterval = 0
 
-                        let finalizationTime = response.resultsFinalizationTime
+                        // Access timing attributes from the AttributedString
+                        for run in response.text.runs {
+                            let runText = String(response.text[run.range].characters)
 
-                        // Check if CMTime is valid
-                        if finalizationTime.isValid && !finalizationTime.isIndefinite {
-                            // resultsFinalizationTime is a CMTime, convert to seconds
-                            timestamp = CMTimeGetSeconds(finalizationTime)
-                            // Duration is unknown from single time point, estimate based on text length
-                            duration = Double(plainText.split(separator: " ").count) * 0.3 // ~0.3s per word
+                            // Get timing from audioTimeRange attribute using keypath
+                            if let timeRange = run[keyPath: \.audioTimeRange] {
+                                let startTime = CMTimeGetSeconds(timeRange.start)
+                                let duration = CMTimeGetSeconds(timeRange.duration)
+
+                                // Track overall segment bounds
+                                if wordTimings.isEmpty {
+                                    segmentStartTime = startTime
+                                }
+                                segmentEndTime = max(segmentEndTime, startTime + duration)
+
+                                // Map actual timed range proportionally across words based on character share
+                                let words = runText.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+
+                                // Include trailing space per word (except last) so timing matches spacing in the run
+                                let wordLengths: [Int] = words.enumerated().map { index, word in
+                                    word.count + (index < words.count - 1 ? 1 : 0)
+                                }
+                                let totalLength = wordLengths.reduce(0, +)
+
+                                guard totalLength > 0 else { continue }
+
+                                var offset: TimeInterval = 0
+
+                                for (index, word) in words.enumerated() {
+                                    guard !word.isEmpty else { continue }
+
+                                    let portion = Double(wordLengths[index]) / Double(totalLength)
+                                    let wordDuration = duration * portion
+
+                                    wordTimings.append(WordTiming(
+                                        word: word,
+                                        timestamp: (startTime + offset) - segmentStartTime, // Relative to segment
+                                        duration: wordDuration
+                                    ))
+
+                                    offset += duration * portion
+                                }
+                            }
+                        }
+
+                        // Calculate overall segment timing
+                        var timestamp: TimeInterval
+                        var duration: TimeInterval
+
+                        // If we successfully extracted timing from runs, use it
+                        if segmentEndTime > segmentStartTime {
+                            timestamp = segmentStartTime
+                            duration = segmentEndTime - segmentStartTime
                         } else {
-                            // Fallback to calculated timestamps if CMTime is invalid
-                            timestamp = self.finalizedSegments.last.map { $0.timestamp + $0.duration } ?? 0
-                            duration = 1.0
+                            // Fallback to resultsFinalizationTime if audioTimeRange not available
+                            let finalizationTime = response.resultsFinalizationTime
+
+                            if finalizationTime.isValid && !finalizationTime.isIndefinite {
+                                timestamp = CMTimeGetSeconds(finalizationTime)
+                                duration = Double(plainText.split(separator: " ").count) * 0.3
+                            } else {
+                                // Last fallback: calculate from previous segments
+                                timestamp = self.finalizedSegments.last.map { $0.timestamp + $0.duration } ?? 0
+                                duration = 1.0
+                            }
+                        }
+
+                        timestamp += baseTimeOffset
+
+                        // Ensure monotonic timestamps; if analyzer resets within an utterance, clamp forward.
+                        if let last = self.finalizedSegments.last {
+                            let lastEnd = last.timestamp + last.duration
+                            if timestamp < lastEnd {
+                                let shift = lastEnd - timestamp
+                                timestamp += shift
+                            }
                         }
 
                         let segment = TranscriptSegment(
                             text: plainText,
                             timestamp: timestamp,
-                            duration: duration
+                            duration: duration,
+                            wordTimings: wordTimings.isEmpty ? nil : wordTimings
                         )
 
                         self.finalizedSegments.append(segment)
@@ -200,6 +278,10 @@ class TranscriptionService: ObservableObject {
         }
 
         return optimalFormat
+    }
+
+    func updateTimeOffset(_ timeOffset: TimeInterval) {
+        baseTimeOffset = max(0, timeOffset)
     }
 
     // Request authorization for speech recognition

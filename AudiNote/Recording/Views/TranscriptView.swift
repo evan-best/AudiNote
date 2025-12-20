@@ -9,73 +9,224 @@ import SwiftUI
 
 struct TranscriptView: View {
     let segments: [TranscriptSegment]
+    let currentTime: TimeInterval
     let onTimestampTap: ((TimeInterval) -> Void)?
 
-    init(segments: [TranscriptSegment], onTimestampTap: ((TimeInterval) -> Void)? = nil) {
+    init(segments: [TranscriptSegment], currentTime: TimeInterval = 0, onTimestampTap: ((TimeInterval) -> Void)? = nil) {
         self.segments = segments
+        self.currentTime = currentTime
         self.onTimestampTap = onTimestampTap
     }
 
     var body: some View {
         GeometryReader { geometry in
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    ForEach(segments) { segment in
-                        TranscriptSegmentRow(
-                            segment: segment,
-                            onTimestampTap: onTimestampTap
-                        )
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        ForEach(segments) { segment in
+                            TranscriptSegmentRow(
+                                segment: segment,
+                                isActive: isSegmentActive(segment),
+                                onTimestampTap: onTimestampTap,
+                                currentTime: currentTime
+                            )
+                            .id(segment.id)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 20)
+                    .padding(.bottom, 80)
+                }
+                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+                .frame(width: geometry.size.width, height: geometry.size.height)
+                .onChange(of: currentTime) { _, newTime in
+                    // Auto-scroll to active segment
+                    if let activeSegment = segments.first(where: { isSegmentActive($0) }) {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            proxy.scrollTo(activeSegment.id, anchor: .center)
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 8)
-                .padding(.top, 20)
-                .padding(.bottom, 80)
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
         }
+    }
+
+    private func isSegmentActive(_ segment: TranscriptSegment) -> Bool {
+        let endTime = segment.timestamp + segment.duration
+        return currentTime >= segment.timestamp && currentTime < endTime
     }
 }
 
 struct TranscriptSegmentRow: View {
     let segment: TranscriptSegment
+    let isActive: Bool
     let onTimestampTap: ((TimeInterval) -> Void)?
+    let currentTime: TimeInterval
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Timestamp
-            HStack {
-                if let onTap = onTimestampTap {
-                    Button {
-                        onTap(segment.timestamp)
-                    } label: {
-                        Text(segment.formattedTimestamp)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.secondary.opacity(0.6))
-                    }
-                    .buttonStyle(.plain)
-                } else {
+        Button {
+            onTimestampTap?(segment.timestamp)
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                // Timestamp
+                HStack {
                     Text(segment.formattedTimestamp)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary.opacity(0.6))
+
+                    Spacer()
                 }
 
-                Spacer()
+                // Transcript text with word-by-word reveal
+                HStack {
+                    Text(segment.text)
+                        .font(.system(size: 24))
+                        .fontWeight(.medium)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textRenderer(WordRevealRenderer(
+                            text: segment.text,
+                            wordTimings: segment.wordTimings,
+                            elapsedTime: currentTime - segment.timestamp
+                        ))
+
+                    Spacer()
+                }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
+    }
+}
 
-            // Transcript text
-            HStack {
-                Text(segment.text)
-                    .font(.system(size: 24))
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+// Word-by-word shimmer reveal renderer matching live transcription effect
+struct WordRevealRenderer: TextRenderer, Animatable {
+    let text: String
+    private let wordTimings: [WordTiming]?
+    var elapsedTime: TimeInterval // Time elapsed in current segment
 
-                Spacer()
+    var animatableData: Double {
+        get { elapsedTime }
+        set { elapsedTime = newValue }
+    }
+
+    init(text: String, wordTimings: [WordTiming]?, elapsedTime: TimeInterval) {
+        self.text = text
+        self.wordTimings = wordTimings
+        self.elapsedTime = elapsedTime
+    }
+
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        guard let timings = wordTimings, !timings.isEmpty else {
+            // No word timings - render all black (for old recordings)
+            for line in layout {
+                for run in line {
+                    for slice in run {
+                        context.draw(slice)
+                    }
+                }
+            }
+            return
+        }
+
+        // Split text into words to identify boundaries
+        let words = text.split(separator: " ", omittingEmptySubsequences: false)
+        let wordTimingMap = alignWordTimings(words: words, timings: timings)
+
+        // Build character-to-word index mapping and track character positions within words
+        var charToWord: [Int] = []
+        var charIndexInWord: [Int] = []
+
+        for (wordIndex, word) in words.enumerated() {
+            for charIndex in 0..<word.count {
+                charToWord.append(wordIndex)
+                charIndexInWord.append(charIndex)
+            }
+            // Add mapping for space (assign to current word)
+            if wordIndex < words.count - 1 {
+                charToWord.append(wordIndex)
+                charIndexInWord.append(0)
             }
         }
-        .frame(maxWidth: .infinity)
+
+        // Render each character with shimmer effect using actual word timing
+        var charIndex = 0
+
+        for line in layout {
+            for run in line {
+                for slice in run {
+                    // Get word index for this character
+                    let wordIndex = charIndex < charToWord.count ? charToWord[charIndex] : 0
+                    let charPosInWord = charIndex < charIndexInWord.count ? charIndexInWord[charIndex] : 0
+
+                    // Use actual word timing from Speech API
+                    guard let timingIndex = wordTimingMap[wordIndex], timingIndex < timings.count else {
+                        context.draw(slice)
+                        charIndex += 1
+                        continue
+                    }
+
+                    let wordTiming = timings[timingIndex]
+                    let wordStart = wordTiming.timestamp
+                    let wordEnd = wordTiming.timestamp + wordTiming.duration
+
+                    // Reveal over the full word duration so the fill finishes as the audio ends
+                    let baseReveal = max(0.05, wordTiming.duration)
+                    let charDelay = Double(charPosInWord) * min(0.02, baseReveal / 8)
+
+                    let opacity: Double
+
+                    if elapsedTime < wordStart {
+                        // Haven't reached this word yet - gray
+                        opacity = 0.35
+                    } else {
+                        // Progress through reveal using a smoothstep curve
+                        let progress = max(0, min(1, (elapsedTime - wordStart - charDelay) / baseReveal))
+                        let eased = progress * progress * (3 - 2 * progress) // smoothstep
+
+                        if elapsedTime < wordEnd {
+                            opacity = 0.35 + (0.65 * eased)
+                        } else {
+                            // Keep at full opacity once word audio is complete
+                            opacity = 1.0
+                        }
+                    }
+
+                    var copy = context
+                    copy.opacity = opacity
+                    copy.draw(slice)
+
+                    charIndex += 1
+                }
+            }
+        }
+    }
+
+    private func alignWordTimings(words: [Substring], timings: [WordTiming]) -> [Int: Int] {
+        var map: [Int: Int] = [:]
+        var timingIndex = 0
+
+        for (wordIndex, word) in words.enumerated() {
+            let normalizedWord = normalizeWord(String(word))
+            guard !normalizedWord.isEmpty else { continue }
+            guard timingIndex < timings.count else { break }
+
+            let normalizedTiming = normalizeWord(timings[timingIndex].word)
+            if normalizedWord == normalizedTiming {
+                map[wordIndex] = timingIndex
+                timingIndex += 1
+            }
+        }
+
+        return map
+    }
+
+    private func normalizeWord(_ value: String) -> String {
+        let lowered = value.lowercased()
+        let trimmed = lowered.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.trimmingCharacters(in: .punctuationCharacters.union(.symbols))
     }
 }
 
@@ -161,7 +312,7 @@ struct TranscriptionStatusView: View {
         )
     ]
 
-    return TranscriptView(segments: sampleSegments) { timestamp in
+    return TranscriptView(segments: sampleSegments, currentTime: 5.0) { timestamp in
         print("Tapped timestamp: \(timestamp)")
     }
 }

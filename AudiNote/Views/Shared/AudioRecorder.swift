@@ -97,23 +97,25 @@ class AudioRecorder: ObservableObject {
         let session = AVAudioSession.sharedInstance()
         do {
             // Use .playAndRecord to support speaker output
-            // .spokenAudio mode optimizes for speech and provides better echo cancellation
+            // .spokenAudio mode favors speech playback/recording without chat constraints
             try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetooth, .duckOthers])
 
-            // Set preferred input to built-in mic (bottom mic for better speech capture)
-            if let availableInputs = session.availableInputs,
-               let builtInMic = availableInputs.first(where: { $0.portType == .builtInMic }) {
-                try session.setPreferredInput(builtInMic)
-            }
+            // Don't force a specific mic - let the system choose the best one
+            // When .defaultToSpeaker is set, iOS will use the speakerphone mic which is clearer
 
-            // Optimize for speech - 16kHz is optimal for voice
-            try session.setPreferredSampleRate(16000)
-            try session.setPreferredIOBufferDuration(0.005) // 5ms for low latency
+            try session.setPreferredSampleRate(44100)
+            try session.setPreferredIOBufferDuration(0.002) // Lower latency for faster transcription updates
 
             try session.setActive(true)
 
-            print("✅ Audio session configured: mode=\(session.mode.rawValue), category=\(session.category.rawValue)")
-            print("✅ Current input: \(session.currentRoute.inputs.first?.portName ?? "unknown")")
+            if session.isInputGainSettable {
+                try session.setInputGain(1.0)
+            }
+
+            if !isBluetoothOutputActive(session) {
+                try session.overrideOutputAudioPort(.speaker)
+            }
+
         } catch {
             print("Failed to configure AVAudioSession: \(error)")
             return
@@ -159,7 +161,7 @@ class AudioRecorder: ObservableObject {
         }
 
         // Install tap for recording AND transcription
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, time in
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: inputFormat) { [weak self] buffer, time in
             guard let self = self, let file = self.audioFile, let converter = self.recordingConverter else { return }
 
             // Convert input buffer to recording format
@@ -175,6 +177,7 @@ class AudioRecorder: ObservableObject {
             }
 
             if error == nil {
+                applyAutoGain(to: convertedBuffer)
                 try? file.write(from: convertedBuffer)
             }
 
@@ -210,14 +213,20 @@ class AudioRecorder: ObservableObject {
             // Calculate amplitude for waveform
             let channelData = buffer.floatChannelData?[0]
             let channelDataCount = Int(buffer.frameLength)
-            var sum: Float = 0
+            var sumSquares: Float = 0
+            var peak: Float = 0
             if let data = channelData {
                 for i in 0..<channelDataCount {
-                    sum += abs(data[i])
+                    let value = abs(data[i])
+                    sumSquares += value * value
+                    if value > peak {
+                        peak = value
+                    }
                 }
             }
-            let avgPower = sum / Float(channelDataCount)
-            let amplitude = CGFloat(avgPower)
+            let rms = sqrt(sumSquares / Float(max(1, channelDataCount)))
+            let blended = (0.7 * peak) + (0.3 * rms)
+            let amplitude = CGFloat(blended)
 
             DispatchQueue.main.async {
                 self.amplitudes.append(amplitude)
@@ -227,7 +236,6 @@ class AudioRecorder: ObservableObject {
         // Start engine
         do {
             try engine.start()
-            print("✅ Recording to: \(fileURL.path)")
         } catch {
             print("Failed to start audio engine: \(error)")
             return
@@ -368,8 +376,57 @@ class AudioRecorder: ObservableObject {
         }
     }
 
+    private func applyAutoGain(to buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData else { return }
+
+        let channelCount = Int(buffer.format.channelCount)
+        let frameLength = Int(buffer.frameLength)
+        var peak: Float = 0
+
+        for channel in 0..<channelCount {
+            let data = channelData[channel]
+            for frame in 0..<frameLength {
+                let value = abs(data[frame])
+                if value > peak {
+                    peak = value
+                }
+            }
+        }
+
+        guard peak > 0 else { return }
+
+        let targetPeak: Float = 0.98
+        let maxGain: Float = 8.0
+        let gain = min(maxGain, targetPeak / peak)
+
+        if gain <= 1.0 {
+            return
+        }
+
+        for channel in 0..<channelCount {
+            let data = channelData[channel]
+            for frame in 0..<frameLength {
+                var value = data[frame] * gain
+                if value > 1.0 { value = 1.0 }
+                if value < -1.0 { value = -1.0 }
+                data[frame] = value
+            }
+        }
+    }
+
     func getDocumentsDirectory() -> URL {
         return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    private func isBluetoothOutputActive(_ session: AVAudioSession) -> Bool {
+        session.currentRoute.outputs.contains { output in
+            switch output.portType {
+            case .bluetoothA2DP, .bluetoothHFP, .bluetoothLE:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     // MARK: - Live Transcription
@@ -385,9 +442,11 @@ class AudioRecorder: ObservableObject {
                 }
 
                 // Start the transcription service and get optimal format
-                guard let optimalFormat = try await transcriptionService?.startStreamingTranscription() else {
+                guard let optimalFormat = try await transcriptionService?.startStreamingTranscription(timeOffset: 0) else {
                     return
                 }
+
+                transcriptionService?.updateTimeOffset(currentRecordingOffset())
 
                 // Now set up the converter with the correct format
                 guard let inputNode = audioEngine?.inputNode else {
@@ -416,6 +475,14 @@ class AudioRecorder: ObservableObject {
         }
     }
 
+    private func currentRecordingOffset() -> TimeInterval {
+        if let startTime = recordingStartTime {
+            let raw = Date().timeIntervalSince(startTime) - pausedDuration
+            return max(0, raw)
+        }
+        return max(0, elapsed)
+    }
+
     @MainActor
     private func stopLiveTranscription() {
         // Stop the transcription service (will finalize the analyzer)
@@ -429,4 +496,3 @@ class AudioRecorder: ObservableObject {
         finalizedSegmentsCancellable = nil
     }
 }
-

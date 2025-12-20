@@ -17,6 +17,7 @@ import AVFoundation
     var loadError: String?
     var showTranscript = false
     var isAudioLoaded = false
+    var transcriptSegments: [TranscriptSegment] = []
 
     // MARK: - Dependencies
     private let recording: Recording
@@ -24,6 +25,8 @@ import AVFoundation
     // MARK: - Initialization
     init(recording: Recording) {
         self.recording = recording
+        // Load transcript segments immediately
+        self.transcriptSegments = recording.decodedTranscriptSegments
     }
 
     // MARK: - Public Methods
@@ -83,7 +86,7 @@ import AVFoundation
     var shareMessage: String {
         var message = "\(recording.title)\nRecorded: \(recording.formattedDate)\nDuration: \(recording.formattedDuration)"
 
-        if recording.isTranscribed, let transcript = recording.transcript, !transcript.isEmpty {
+        if recording.isTranscribed, let transcript = recording.displayTranscript, !transcript.isEmpty {
             message += "\n\nTranscript:\n\(transcript)"
         }
 
@@ -129,4 +132,3 @@ import AVFoundation
         return String(format: "%02d:%02d", minutes, seconds)
     }
 }
-

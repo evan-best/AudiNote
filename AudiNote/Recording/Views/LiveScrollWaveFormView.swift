@@ -278,7 +278,7 @@ struct WaveformView: View {
                     amplitude = 0.02  // Default for out of bounds
                 }
                 
-                let normalizedAmplitude = min(1.0, amplitude * 2.5)
+                let normalizedAmplitude = min(1.0, amplitude * 3.5)
                 let barHeight = minBarHeight + (maxBarHeight - minBarHeight) * normalizedAmplitude
                 
                 let x = centerStartX + CGFloat(i) * step - pixelOffset
@@ -313,8 +313,8 @@ struct WaveformView: View {
             let now = Date()
             let timeSinceLastUpdate = now.timeIntervalSince(lastAmplitudeUpdate)
 
-            // Only update if enough time has passed (33ms = ~30fps to reduce frame pressure)
-            if timeSinceLastUpdate > 0.033 {
+            // Only update if enough time has passed (20ms = ~50fps)
+            if timeSinceLastUpdate > 0.02 {
                 updateWaveformData(with: latestAmplitude)
                 lastAmplitudeUpdate = now
                 pendingAmplitude = nil
@@ -522,9 +522,9 @@ struct TranscriptionStackView: View {
 								// Animate when sentence is finalized
 								animationTime = 0
 								
-								// Smooth animation over text length
-								let totalDuration = Double(text.count) * 0.015 + 0.2
-								let steps = 120 // 60 fps
+								// Faster animation over text length
+								let totalDuration = Double(text.count) * 0.008 + 0.1
+								let steps = 60
 								let increment = totalDuration / Double(steps)
 								
 								for _ in 0..<steps {
@@ -559,9 +559,9 @@ struct TranscriptionStackView: View {
 				for run in line {
 					for (index, slice) in run.enumerated() {
 						// Calculate opacity based on character index and elapsed time
-						// Smooth, fast animation: 15ms delay per character, 100ms fade
-						let delay = Double(charIndex) * 0.015 // 15ms delay per character
-						let progress = max(0, min(1, (elapsedTime - delay) / 0.1)) // 100ms fade duration
+						// Faster animation: 8ms delay per character, 50ms fade
+						let delay = Double(charIndex) * 0.008
+						let progress = max(0, min(1, (elapsedTime - delay) / 0.05))
 						
 						var copy = context
 						copy.opacity = progress

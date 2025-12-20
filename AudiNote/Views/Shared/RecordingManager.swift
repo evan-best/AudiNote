@@ -41,6 +41,10 @@ final class RecordingManager: ObservableObject {
     // MARK: - Persistence
     @MainActor
     func saveRecording(title: String) throws -> Recording {
+        // IMPORTANT: Capture transcript segments BEFORE stopping recording
+        let segmentsToSave = recorder.finalizedSegments
+        let currentPartial = recorder.currentTranscript
+
         recorder.stopRecording()
 
         // Ensure we have a valid recording URL
@@ -50,14 +54,14 @@ final class RecordingManager: ObservableObject {
 
         // Save ONLY the filename (not full path) for persistence across app launches
         let filename = recordingURL.lastPathComponent
-        let hasTranscript = !recorder.finalizedSegments.isEmpty
+        let hasTranscript = !segmentsToSave.isEmpty
 
         let newRecording = Recording(
             title: title,
             timestamp: Date(),
             duration: recorder.elapsed,
             audioFilePath: filename,
-            transcriptSegments: hasTranscript ? recorder.finalizedSegments : nil,
+            transcriptSegments: hasTranscript ? segmentsToSave : nil,
             isTranscribed: hasTranscript
         )
 
@@ -83,7 +87,6 @@ final class RecordingManager: ObservableObject {
         // Check authorization first
         let authorized = await transcriptionService.requestAuthorization()
         guard authorized else {
-            print("❌ Speech recognition not authorized")
             recording.isTranscribing = false
             try? modelContext.save()
             return
@@ -91,7 +94,6 @@ final class RecordingManager: ObservableObject {
 
         // Get audio file URL using the helper that reconstructs the path
         guard let audioURL = recording.audioFileURL else {
-            print("❌ Audio file not found. Filename: \(recording.audioFilePath)")
             recording.isTranscribing = false
             try? modelContext.save()
             return
@@ -99,7 +101,6 @@ final class RecordingManager: ObservableObject {
 
         // Verify file exists and is not empty
         guard FileManager.default.fileExists(atPath: audioURL.path) else {
-            print("❌ Audio file does not exist at path: \(audioURL.path)")
             recording.isTranscribing = false
             try? modelContext.save()
             return
@@ -149,15 +150,12 @@ final class RecordingManager: ObservableObject {
                 try modelContext.save()
             }
         } catch is CancellationError {
-            print("⚠️ Transcription cancelled")
             recording.isTranscribing = false
             try? modelContext.save()
         } catch let error as TranscriptionError {
-            print("❌ Transcription failed: \(error.localizedDescription)")
             recording.isTranscribing = false
             try? modelContext.save()
         } catch {
-            print("❌ Transcription failed: \(error.localizedDescription)")
             recording.isTranscribing = false
             try? modelContext.save()
         }

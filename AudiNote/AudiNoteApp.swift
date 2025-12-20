@@ -29,24 +29,17 @@ struct AudiNoteApp: App {
                 isStoredInMemoryOnly: false,
                 allowsSave: true
             )
-            let container = try ModelContainer(for: schema, configurations: [localConfig])
-            print("✅ Successfully created local ModelContainer with database: \(dbName)")
-            return container
+            return try ModelContainer(for: schema, configurations: [localConfig])
         } catch {
-            print("⚠️ Failed to create local ModelContainer: \(error)")
-            print("⚠️ Error details: \(error.localizedDescription)")
-
             // If local storage fails, use in-memory as absolute fallback
             do {
                 let memoryConfig = ModelConfiguration(
                     schema: schema,
                     isStoredInMemoryOnly: true
                 )
-                let container = try ModelContainer(for: schema, configurations: [memoryConfig])
-                print("⚠️ Using in-memory storage (data will not persist)")
-                return container
+                return try ModelContainer(for: schema, configurations: [memoryConfig])
             } catch {
-                fatalError("❌ Cannot create ModelContainer even with in-memory storage: \(error)")
+                fatalError("Cannot create ModelContainer even with in-memory storage: \(error)")
             }
         }
     }()

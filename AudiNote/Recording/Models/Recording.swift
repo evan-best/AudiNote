@@ -41,7 +41,6 @@ final class Recording {
         self.timestamp = timestamp
         self.duration = duration
         self.audioFilePath = audioFilePath
-        self.transcript = transcript
         self.notes = notes
         self.isTranscribed = isTranscribed
         self.isTranscribing = isTranscribing
@@ -49,9 +48,13 @@ final class Recording {
         self.isStarred = isStarred
         self.tags = tags
 
-        // Encode transcript segments to Data
+        // Encode transcript segments to Data and set transcript string
         if let segments = transcriptSegments {
             self.transcriptSegments = try? JSONEncoder().encode(segments)
+            // Generate transcript string from segments if not explicitly provided
+            self.transcript = transcript ?? segments.map { $0.text }.joined(separator: " ")
+        } else {
+            self.transcript = transcript
         }
     }
 
@@ -59,6 +62,20 @@ final class Recording {
     var decodedTranscriptSegments: [TranscriptSegment] {
         guard let data = transcriptSegments else { return [] }
         return (try? JSONDecoder().decode([TranscriptSegment].self, from: data)) ?? []
+    }
+
+    // Computed property to get transcript, generating from segments if needed
+    var displayTranscript: String? {
+        // If we have an explicit transcript, use it
+        if let transcript = transcript, !transcript.isEmpty {
+            return transcript
+        }
+
+        // Otherwise, generate from segments if they exist
+        let segments = decodedTranscriptSegments
+        guard !segments.isEmpty else { return nil }
+
+        return segments.map { $0.text }.joined(separator: " ")
     }
 
     // Update transcript segments
