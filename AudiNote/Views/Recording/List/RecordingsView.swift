@@ -123,7 +123,7 @@ struct RecordingsView: View {
             if recording.notes?.lowercased().contains(lowercased) == true {
                 return true
             }
-            return recording.tags.contains { $0.lowercased().contains(lowercased) }
+			return recording.tags?.contains { $0.name.lowercased().contains(lowercased) } ?? false
         }
     }
     
@@ -383,6 +383,12 @@ private struct SortSheetView: View {
 }
 
 #Preview {
-    RecordingsView(navigationPath: .constant(NavigationPath()))
-		.environmentObject(SessionViewModel())
+    let container = try! ModelContainer(
+        for: Recording.self, Tag.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+
+    return RecordingsView(navigationPath: .constant(NavigationPath()))
+        .environmentObject(SessionViewModel())
+        .modelContainer(container)
 }

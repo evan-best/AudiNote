@@ -22,7 +22,8 @@ final class Recording {
     var isTranscribing: Bool = false
     var isUploaded: Bool = false
     var isStarred: Bool = false
-    var tags: [String] = []
+
+    var tags: [Tag]? = []
 
     init(
         title: String = "",
@@ -37,7 +38,7 @@ final class Recording {
         isTranscribing: Bool = false,
         isUploaded: Bool = false,
         isStarred: Bool = false,
-        tags: [String] = []
+        tags: [Tag]? = []
     ) {
         self.title = title
         self.timestamp = timestamp
@@ -140,9 +141,9 @@ final class Recording {
         }
     }
     
-    /// Returns up to 2 tags for display in the list
+    /// Returns up to 2 tag names for display in the list
     var displayTags: [String] {
-        return Array(tags.prefix(2))
+        return tags?.prefix(3).map { $0.name } ?? []
     }
 
     // MARK: - File Path Helpers
@@ -170,3 +171,4 @@ final class Recording {
         return AudioStorage.resolveAudioURL(from: audioFilePath)
     }
 }
+

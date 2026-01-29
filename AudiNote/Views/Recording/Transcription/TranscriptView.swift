@@ -7,10 +7,22 @@
 
 import SwiftUI
 
+// Preference key to track scroll offset changes
+struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct TranscriptView: View {
     let segments: [TranscriptSegment]
     let currentTime: TimeInterval
     let onTimestampTap: ((TimeInterval) -> Void)?
+
+    @State private var isAutoScrollEnabled = true
+    @State private var isUserScrolling = false
+    @State private var scrollDisableTimer: Timer?
 
     init(segments: [TranscriptSegment], currentTime: TimeInterval = 0, onTimestampTap: ((TimeInterval) -> Void)? = nil) {
         self.segments = segments
@@ -19,36 +31,103 @@ struct TranscriptView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        ForEach(segments) { segment in
-                            TranscriptSegmentRow(
-                                segment: segment,
-                                isActive: isSegmentActive(segment),
-                                onTimestampTap: onTimestampTap,
-                                currentTime: currentTime
-                            )
-                            .id(segment.id)
+        ZStack(alignment: .bottom) {
+            GeometryReader { geometry in
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            ForEach(segments) { segment in
+                                TranscriptSegmentRow(
+                                    segment: segment,
+                                    isActive: isSegmentActive(segment),
+                                    onTimestampTap: onTimestampTap,
+                                    currentTime: currentTime
+                                )
+                                .id(segment.id)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 20)
+                        .padding(.bottom, 200)
+                        .background(
+                            GeometryReader { contentGeometry in
+                                Color.clear
+                                    .preference(key: ScrollOffsetPreferenceKey.self, value: contentGeometry.frame(in: .named("scroll")).origin.y)
+                            }
+                        )
+                    }
+                    .coordinateSpace(name: "scroll")
+                    .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 10)
+                            .onChanged { _ in
+                                handleUserScroll()
+                            }
+                    )
+                    .onPreferenceChange(ScrollOffsetPreferenceKey.self) { _ in
+                        // Reset timer when scroll position changes
+                        if isUserScrolling {
+                            scrollDisableTimer?.invalidate()
+                            scrollDisableTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
+                                isUserScrolling = false
+                            }
                         }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 20)
-                    .padding(.bottom, 80)
-                }
-                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-                .frame(width: geometry.size.width, height: geometry.size.height)
-                .onChange(of: currentTime) { _, newTime in
-                    // Auto-scroll to active segment
-                    if let activeSegment = segments.first(where: { isSegmentActive($0) }) {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            proxy.scrollTo(activeSegment.id, anchor: .center)
+                    .onChange(of: currentTime) { _, newTime in
+                        // Auto-scroll to active segment only if enabled and user isn't actively scrolling
+                        if isAutoScrollEnabled && !isUserScrolling {
+                            if let activeSegment = segments.first(where: { isSegmentActive($0) }) {
+                                withAnimation(.easeOut(duration: 0.3)) {
+                                    proxy.scrollTo(activeSegment.id, anchor: .center)
+                                }
+                            }
                         }
                     }
                 }
             }
+
+            // Follow button when auto-scroll is disabled
+            if !isAutoScrollEnabled {
+                Button {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                        isAutoScrollEnabled = true
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Follow")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(Color.accentColor)
+                    .cornerRadius(20)
+                    .shadow(color: Color.black.opacity(0.2), radius: 8, x: 0, y: 4)
+                }
+                .padding(.bottom, 24)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+    }
+
+    private func handleUserScroll() {
+        isUserScrolling = true
+
+        // Disable auto-scroll when user manually scrolls
+        if isAutoScrollEnabled {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                isAutoScrollEnabled = false
+            }
+        }
+
+        // Reset the timer
+        scrollDisableTimer?.invalidate()
+        scrollDisableTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { _ in
+            isUserScrolling = false
         }
     }
 

@@ -6,3 +6,10 @@
 //
 
 import Foundation
+import SwiftUI
+
+extension View {
+	func toast(manager: ToastManager = .shared) -> some View {
+		self.modifier(ToastModifier(toastManager: manager))
+	}
+}

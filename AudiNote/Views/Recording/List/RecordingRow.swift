@@ -1,62 +1,48 @@
 import SwiftUI
-
-extension String {
-    func tagColor() -> (foreground: Color, background: Color) {
-        let colors: [(Color, Color)] = [
-            (.blue, .blue),
-            (.green, .green),
-            (.purple, .purple),
-            (.orange, .orange),
-            (.pink, .pink),
-            (.red, .red),
-            (.teal, .teal),
-            (.indigo, .indigo),
-            (.accentColor, .accentColor)
-        ]
-        
-        let hash = abs(self.hashValue)
-        let colorPair = colors[hash % colors.count]
-        return (foreground: colorPair.0, background: colorPair.1)
-    }
-}
+import SwiftData
 
 struct RecordingRow: View {
     let recording: Recording
     
+    @State private var tagViewModel: TagViewModel
+    
+    init(recording: Recording) {
+        self.recording = recording
+        self._tagViewModel = State(initialValue: TagViewModel(recording: recording))
+    }
+    
     var body: some View {
-		HStack {
-            
+        HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(recording.title.isEmpty ? "Untitled" : recording.title)
                     .font(.headline)
                     .lineLimit(1)
-				
+                
                 Text(recording.formattedDate)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    
+                
                 // Tags
-                if !recording.displayTags.isEmpty {
+                if !tagViewModel.tags.isEmpty {
                     HStack(spacing: 4) {
-                        ForEach(recording.displayTags, id: \.self) { tag in
-                            let colors = tag.tagColor()
-                            Text(tag)
+                        ForEach(Array(tagViewModel.tags.prefix(3)).enumerated(), id: \.element.id) { idx, tag in
+                            let tagColor = Color(hex: tag.colorHex) ?? .blue
+                            Text(tag.name)
                                 .font(.caption2)
                                 .fontWeight(.medium)
-                                .foregroundColor(colors.foreground == .accentColor ? .primary : colors.foreground)
+                                .foregroundColor(tagColor)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(colors.background.opacity(colors.background == .accentColor ? 0.15 : 0.25))
+                                .background(tagColor.opacity(0.15))
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
-                        
-                        if recording.tags.count > 2 {
-                            Text("+\(recording.tags.count - 2)")
+                        if tagViewModel.tags.count > 3 {
+                            Text("+\(tagViewModel.tags.count - 3)")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
                     }
-					.padding(.top, 2)
+                    .padding(.top, 2)
                 }
             }
             
@@ -74,36 +60,63 @@ struct RecordingRow: View {
 }
 
 struct RecordingRowPreview: View {
-	@State private var selectedRecording: Recording?
-	
-	let sampleRecording = Recording(
-		title: "Sample Meeting",
-		timestamp: Date(),
-		duration: 110,
-		audioFilePath: "sample.m4a",
-		tags: ["Meeting", "Work", "Important"]
-	)
-	
-	var body: some View {
-		List {
-			Button {
-				selectedRecording = sampleRecording
-			} label: {
-				RecordingRow(recording: sampleRecording)
-					.frame(maxWidth: .infinity, alignment: .leading)
-					.contentShape(Rectangle())
-			}
-			.buttonStyle(.plain)
-		}
-		.padding(10)
-		.listStyle(.plain)
-		.listRowInsets(EdgeInsets())
-		.fullScreenCover(item: $selectedRecording) { recording in
-			RecordingDetailView(recording: recording)
-		}
-	}
+    @Environment(\.modelContext) private var modelContext
+    @State private var selectedRecording: Recording?
+    @State private var sampleRecording: Recording?
+
+    var body: some View {
+        List {
+            if let recording = sampleRecording {
+                Button {
+                    selectedRecording = recording
+                } label: {
+                    RecordingRow(recording: recording)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(10)
+        .listStyle(.plain)
+        .listRowInsets(EdgeInsets())
+        .fullScreenCover(item: $selectedRecording) { recording in
+            RecordingDetailView(recording: recording)
+        }
+        .onAppear {
+            if sampleRecording == nil {
+                let recording = Recording(
+                    title: "Sample Meeting",
+                    timestamp: Date(),
+                    duration: 110,
+                    audioFilePath: "sample.m4a"
+                )
+
+                let tags = [
+                    Tag(name: "Meeting", colorHex: "#3498db"),
+                    Tag(name: "Work", colorHex: "#27ae60"),
+                    Tag(name: "Important", colorHex: "#9b59b6"),
+                    Tag(name: "Project", colorHex: "#e67e22")
+                ]
+
+                recording.tags = tags
+
+                modelContext.insert(recording)
+                tags.forEach { modelContext.insert($0) }
+
+                sampleRecording = recording
+            }
+        }
+    }
 }
 
 #Preview {
-	RecordingRowPreview()
+    let container = try! ModelContainer(
+        for: Recording.self, Tag.self,
+        configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+    )
+
+    return RecordingRowPreview()
+        .modelContainer(container)
 }
+

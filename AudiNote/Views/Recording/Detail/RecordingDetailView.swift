@@ -17,7 +17,6 @@ struct RecordingDetailView: View {
     @EnvironmentObject private var session: SessionViewModel
     @State private var showDeleteAlert = false
     @State private var showTagSheet = false
-    @State private var newTag = ""
     @State private var wasPlayingBeforeScrub = false
     @State private var showRenameAlert = false
     @State private var renameTitle = ""
@@ -121,7 +120,7 @@ struct RecordingDetailView: View {
 			Text("Enter a new name for this recording.")
 		}
 		.sheet(isPresented: $showTagSheet) {
-			TagEditorSheet(recording: recording, newTag: $newTag)
+			TagEditorSheet(recording: recording)
 		}
 		.onAppear {
 			viewModel.loadAudioIfNeeded()
@@ -238,42 +237,49 @@ private struct ControlsHeightReader: View {
 // MARK: - Tag Editor Sheet
 
 struct TagEditorSheet: View {
-    @Bindable var recording: Recording
-    @Binding var newTag: String
+    @State private var viewModel: TagViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @FocusState private var isTextFieldFocused: Bool
+	@State private var selectedColor: Color = .blue
+
+    init(recording: Recording) {
+        _viewModel = State(wrappedValue: TagViewModel(recording: recording))
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     HStack {
-                        TextField("New tag", text: $newTag)
+                        TextField("New tag", text: $viewModel.newTag)
                             .focused($isTextFieldFocused)
                             .onSubmit {
-                                addTag()
+                                viewModel.addTag(color: selectedColor)
                             }
+						Spacer()
+						ColorPicker("", selection: $selectedColor)
 
                         Button {
-                            addTag()
+                            viewModel.addTag(color: selectedColor)
                         } label: {
                             Image(systemName: "plus.circle.fill")
                                 .foregroundStyle(.blue)
                         }
-                        .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
+                        .disabled(viewModel.newTag.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 } header: {
                     Text("Add Tag")
                 }
 
-                if !recording.tags.isEmpty {
+                if !viewModel.tags.isEmpty {
                     Section {
-                        ForEach(recording.tags, id: \.self) { tag in
+                        ForEach(viewModel.tags, id: \.id) { tag in
                             HStack {
-                                Text(tag)
+                                Text(tag.name)
                                 Spacer()
                                 Button {
-                                    removeTag(tag)
+                                    viewModel.removeTag(named: tag.name)
                                 } label: {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundStyle(.secondary)
@@ -295,33 +301,33 @@ struct TagEditorSheet: View {
                 }
             }
             .onAppear {
+                viewModel.configure(modelContext: modelContext)
                 isTextFieldFocused = true
             }
         }
         .presentationDetents([.medium])
     }
-
-    private func addTag() {
-        let trimmed = newTag.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !recording.tags.contains(trimmed) else { return }
-        recording.tags.append(trimmed)
-        newTag = ""
-    }
-
-    private func removeTag(_ tag: String) {
-        recording.tags.removeAll { $0 == tag }
-    }
 }
+
 
 #Preview {
-	NavigationStack {
-		RecordingDetailView(
-			recording: Recording(
-				title: "Team Sync — Aug 11",
-				timestamp: Date(),
-				duration: 312,
-				audioFilePath: "preview.m4a"
-			)
-		)
+	let container = try! ModelContainer(
+		for: Recording.self, Tag.self,
+		configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+	)
+
+	let recording = Recording(
+		title: "Team Sync — Aug 11",
+		timestamp: Date(),
+		duration: 312,
+		audioFilePath: "preview.m4a"
+	)
+	container.mainContext.insert(recording)
+
+	return NavigationStack {
+		RecordingDetailView(recording: recording)
+			.modelContainer(container)
+			.environmentObject(SessionViewModel())
 	}
 }
+

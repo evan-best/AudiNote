@@ -167,13 +167,6 @@ struct ToastModifier: ViewModifier {
     }
 }
 
-// View extension for easy usage
-extension View {
-    func toast(manager: ToastManager = .shared) -> some View {
-        self.modifier(ToastModifier(toastManager: manager))
-    }
-}
-
 // MARK: - Previews
 
 #Preview("Success Toast") {

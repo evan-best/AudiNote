@@ -6,3 +6,9 @@
 //
 
 import Foundation
+
+extension CGFloat {
+	func clamped(to r: ClosedRange<CGFloat>) -> CGFloat {
+		Swift.min(Swift.max(self, r.lowerBound), r.upperBound)
+	}
+}

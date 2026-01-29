@@ -368,12 +368,6 @@ extension WaveformView {
 
 }
 
-private extension CGFloat {
-    func clamped(to r: ClosedRange<CGFloat>) -> CGFloat {
-        Swift.min(Swift.max(self, r.lowerBound), r.upperBound)
-    }
-}
-
 // MARK: - Transcription Stack View
 // Shows finalized segments and current transcript with alternating left/right alignment
 
